@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "AutoSale Umar",
+    "slug": "autosaleumar-app",
+    "scheme": "autosaleumar",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.autosaleumar.app"
+    },
+    "android": {
+      "package": "com.autosaleumar.app"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-dev-client"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+    "extra": {
+      "apiBaseUrl": "https://autosaleumar.com"
+    }
+  }
+}
