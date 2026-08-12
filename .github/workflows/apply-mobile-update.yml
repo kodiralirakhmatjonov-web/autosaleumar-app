@@ -1,0 +1,121 @@
+name: Apply mobile-update.zip
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - mobile-update.zip
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-mobile-update-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apply-update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check update archive
+        id: archive
+        shell: bash
+        run: |
+          if [ -f mobile-update.zip ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "mobile-update.zip not found; nothing to apply."
+          fi
+
+      - name: Extract update safely
+        if: steps.archive.outputs.exists == 'true'
+        shell: bash
+        run: |
+          rm -rf .mobile-update-tmp
+          mkdir -p .mobile-update-tmp
+
+          python3 - <<'PY'
+          import pathlib
+          import zipfile
+
+          archive = pathlib.Path("mobile-update.zip")
+          target = pathlib.Path(".mobile-update-tmp").resolve()
+
+          with zipfile.ZipFile(archive) as zf:
+              for info in zf.infolist():
+                  out = (target / info.filename).resolve()
+                  if out != target and target not in out.parents:
+                      raise SystemExit(f"Unsafe ZIP path: {info.filename}")
+              zf.extractall(target)
+          PY
+
+      - name: Detect ZIP root and copy files
+        if: steps.archive.outputs.exists == 'true'
+        shell: bash
+        run: |
+          SOURCE=".mobile-update-tmp"
+
+          shopt -s dotglob nullglob
+          entries=(.mobile-update-tmp/*)
+
+          if [ "${#entries[@]}" -eq 1 ] && [ -d "${entries[0]}" ]; then
+            candidate="${entries[0]}"
+            if [ -f "$candidate/package.json" ] || [ -d "$candidate/app" ] || [ -d "$candidate/src" ]; then
+              SOURCE="$candidate"
+            fi
+          fi
+
+          echo "Applying files from: $SOURCE"
+
+          rsync -a \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude 'mobile-update.zip' \
+            "$SOURCE/" ./
+
+          rm -rf .mobile-update-tmp
+          rm -f mobile-update.zip
+
+      - name: Setup Node
+        if: steps.archive.outputs.exists == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        if: steps.archive.outputs.exists == 'true'
+        shell: bash
+        run: |
+          npm install --no-audit --no-fund
+
+      - name: TypeScript check
+        if: steps.archive.outputs.exists == 'true'
+        shell: bash
+        run: |
+          npm run typecheck --if-present
+
+      - name: Commit applied update
+        if: steps.archive.outputs.exists == 'true'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No repository changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Apply mobile update"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
