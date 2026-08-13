@@ -107,29 +107,31 @@ jobs:
 
           echo "required=$requires_native" >> "$GITHUB_OUTPUT"
 
-          if [ "$requires_native" = "true" ]; then
-            echo "Native-impacting files changed. OTA publish will be skipped."
-          else
-            echo "JS/UI/assets-only update. Eligible for OTA publish."
-          fi
-
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
           node-version: 22
 
+      - name: Remove stale dependencies
+        shell: bash
+        run: |
+          rm -rf node_modules
+
       - name: Install dependencies
         shell: bash
-        run: npm install --no-audit --no-fund
+        run: |
+          npm install --no-audit --no-fund
 
       - name: TypeScript check
         shell: bash
-        run: npm run typecheck --if-present
+        run: |
+          npm run typecheck --if-present
 
       - name: Verify Expo token
         if: env.EXPO_TOKEN != ''
         shell: bash
-        run: npx eas-cli@latest whoami
+        run: |
+          npx eas-cli@latest whoami
 
       - name: Link project to Expo EAS
         if: env.EXPO_TOKEN != ''
@@ -145,7 +147,6 @@ jobs:
           if [ "$HAS_PROJECT_ID" = "yes" ]; then
             echo "EAS project is already linked."
           else
-            echo "Linking AutoSale Umar to EAS..."
             npx eas-cli@latest init \
               --account kodiralirakhmatjonov \
               --force \
@@ -174,15 +175,21 @@ jobs:
 
       - name: Final TypeScript check
         shell: bash
-        run: npm run typecheck --if-present
+        run: |
+          npm run typecheck --if-present
 
       - name: Remove update archive
         if: steps.archive.outputs.exists == 'true'
         shell: bash
-        run: rm -f mobile-update.zip
+        run: |
+          rm -f mobile-update.zip
+
+      - name: Stop tracking node_modules
+        shell: bash
+        run: |
+          git rm -r --cached --ignore-unmatch node_modules || true
 
       - name: Commit verified repository state
-        id: commit
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
@@ -191,15 +198,12 @@ jobs:
           git add -A
 
           if git diff --cached --quiet; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "No repository changes to commit."
             exit 0
           fi
 
           git commit -m "Apply verified mobile update"
           git push origin "HEAD:${GITHUB_REF_NAME}"
-
-          echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Publish development OTA update
         if: >
@@ -210,14 +214,6 @@ jobs:
         run: |
           npx eas-cli@latest update \
             --channel development \
+            --environment development \
             --message "AutoSale Umar GitHub update ${GITHUB_SHA}" \
             --non-interactive
-
-      - name: Update result
-        shell: bash
-        run: |
-          echo "=========================================="
-          echo "AutoSale Umar mobile pipeline completed."
-          echo "Archive: ${{ steps.archive.outputs.exists }}"
-          echo "Native rebuild required: ${{ steps.native.outputs.required }}"
-          echo "=========================================="
