@@ -26,10 +26,16 @@
       "policy": "appVersion"
     },
     "updates": {
-      "fallbackToCacheTimeout": 0
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/51511af7-f45e-4395-92aa-bf90ced182ea"
     },
     "extra": {
-      "apiBaseUrl": "https://autosaleumar.com"
-    }
+      "apiBaseUrl": "https://autosaleumar.com",
+      "router": {},
+      "eas": {
+        "projectId": "51511af7-f45e-4395-92aa-bf90ced182ea"
+      }
+    },
+    "owner": "kodiralirakhmatjonov"
   }
 }
