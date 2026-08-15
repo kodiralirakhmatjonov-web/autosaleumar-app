@@ -12,15 +12,12 @@ permissions:
   contents: write
 
 concurrency:
-  group: autosaleumar-mobile-update-${{ github.ref }}
+  group: apply-mobile-update-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   apply-update:
     runs-on: ubuntu-latest
-
-    env:
-      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
     steps:
       - name: Checkout repository
@@ -28,7 +25,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect update archive
+      - name: Check update archive
         id: archive
         shell: bash
         run: |
@@ -36,7 +33,7 @@ jobs:
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "No mobile-update.zip. Running setup/check mode."
+            echo "mobile-update.zip not found; nothing to apply."
           fi
 
       - name: Extract update safely
@@ -61,7 +58,7 @@ jobs:
               zf.extractall(target)
           PY
 
-      - name: Apply update files
+      - name: Detect ZIP root and copy files
         if: steps.archive.outputs.exists == 'true'
         shell: bash
         run: |
@@ -86,110 +83,28 @@ jobs:
             "$SOURCE/" ./
 
           rm -rf .mobile-update-tmp
-
-      - name: Detect whether native rebuild is required
-        id: native
-        if: steps.archive.outputs.exists == 'true'
-        shell: bash
-        run: |
-          changed="$(git diff --name-only)"
-          echo "$changed"
-
-          requires_native=false
-
-          while IFS= read -r file; do
-            case "$file" in
-              package.json|package-lock.json|app.json|app.config.*|eas.json|ios/*|android/*)
-                requires_native=true
-                ;;
-            esac
-          done <<< "$changed"
-
-          echo "required=$requires_native" >> "$GITHUB_OUTPUT"
+          rm -f mobile-update.zip
 
       - name: Setup Node
+        if: steps.archive.outputs.exists == 'true'
         uses: actions/setup-node@v6
         with:
           node-version: 22
 
-      - name: Remove stale dependencies
-        shell: bash
-        run: |
-          rm -rf node_modules
-
       - name: Install dependencies
+        if: steps.archive.outputs.exists == 'true'
         shell: bash
         run: |
           npm install --no-audit --no-fund
 
       - name: TypeScript check
-        shell: bash
-        run: |
-          npm run typecheck --if-present
-
-      - name: Verify Expo token
-        if: env.EXPO_TOKEN != ''
-        shell: bash
-        run: |
-          npx eas-cli@latest whoami
-
-      - name: Link project to Expo EAS
-        if: env.EXPO_TOKEN != ''
-        shell: bash
-        run: |
-          HAS_PROJECT_ID="$(node - <<'NODE'
-          const fs = require('fs');
-          const config = JSON.parse(fs.readFileSync('app.json', 'utf8'));
-          process.stdout.write(config?.expo?.extra?.eas?.projectId ? 'yes' : 'no');
-          NODE
-          )"
-
-          if [ "$HAS_PROJECT_ID" = "yes" ]; then
-            echo "EAS project is already linked."
-          else
-            npx eas-cli@latest init \
-              --account kodiralirakhmatjonov \
-              --force \
-              --non-interactive
-          fi
-
-      - name: Configure EAS Update
-        if: env.EXPO_TOKEN != ''
-        shell: bash
-        run: |
-          HAS_UPDATE_URL="$(node - <<'NODE'
-          const fs = require('fs');
-          const config = JSON.parse(fs.readFileSync('app.json', 'utf8'));
-          process.stdout.write(config?.expo?.updates?.url ? 'yes' : 'no');
-          NODE
-          )"
-
-          if [ "$HAS_UPDATE_URL" = "yes" ]; then
-            echo "EAS Update is already configured."
-          else
-            npx eas-cli@latest update:configure \
-              --platform ios \
-              --environment development \
-              --non-interactive
-          fi
-
-      - name: Final TypeScript check
-        shell: bash
-        run: |
-          npm run typecheck --if-present
-
-      - name: Remove update archive
         if: steps.archive.outputs.exists == 'true'
         shell: bash
         run: |
-          rm -f mobile-update.zip
+          npm run typecheck --if-present
 
-      - name: Stop tracking node_modules
-        shell: bash
-        run: |
-          git rm -r --cached --ignore-unmatch node_modules || true
-
-      - name: Commit verified repository state
+      - name: Commit applied update
+        if: steps.archive.outputs.exists == 'true'
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
@@ -202,18 +117,5 @@ jobs:
             exit 0
           fi
 
-          git commit -m "Apply verified mobile update"
+          git commit -m "Apply mobile update"
           git push origin "HEAD:${GITHUB_REF_NAME}"
-
-      - name: Publish development OTA update
-        if: >
-          steps.archive.outputs.exists == 'true' &&
-          steps.native.outputs.required != 'true' &&
-          env.EXPO_TOKEN != ''
-        shell: bash
-        run: |
-          npx eas-cli@latest update \
-            --channel development \
-            --environment development \
-            --message "AutoSale Umar GitHub update ${GITHUB_SHA}" \
-            --non-interactive
