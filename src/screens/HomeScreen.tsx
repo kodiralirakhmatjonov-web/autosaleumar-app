@@ -28,25 +28,17 @@ const SHOWROOM_IMAGES = [
 
 const YANDEX_MAPS = 'https://yandex.ru/maps/org/auto_sale_umar/98317002086';
 
-function SectionHeading({
-  eyebrow,
-  title,
-  action,
-}: {
-  eyebrow?: string;
-  title: string;
-  action?: () => void;
-}) {
+function SectionHeading({ title, action }: { title: string; action?: () => void }) {
   const palette = colors[useColorScheme() === 'dark' ? 'dark' : 'light'];
   return (
     <View style={styles.sectionHeading}>
-      <View style={styles.sectionHeadingCopy}>
-        {eyebrow ? <Text style={[styles.eyebrow, { color: palette.secondary }]}>{eyebrow}</Text> : null}
-        <Text style={[styles.sectionTitle, { color: palette.text }]}>{title}</Text>
-      </View>
+      <Text style={[styles.sectionTitle, { color: palette.text }]}>{title}</Text>
       {action ? (
         <Pressable accessibilityRole="button" onPress={action} hitSlop={10}>
-          <Text style={[styles.sectionAction, { color: palette.accent }]}>Все</Text>
+          <View style={styles.sectionActionInner}>
+            <Text style={[styles.sectionAction, { color: palette.accent }]}>Все</Text>
+            <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={12} tintColor={palette.accent} weight="semibold" />
+          </View>
         </Pressable>
       ) : null}
     </View>
@@ -66,35 +58,27 @@ function QuickAction({
   const palette = colors[dark ? 'dark' : 'light'];
   const nativeGlass = Platform.OS === 'ios' && isGlassEffectAPIAvailable();
 
-  const content = (
-    <View style={styles.quickActionContent}>
-      {Platform.OS === 'ios' ? (
-        <SymbolView name={symbol} size={17} tintColor={palette.text} weight="semibold" />
-      ) : null}
-      <Text style={[styles.quickActionLabel, { color: palette.text }]}>{label}</Text>
-    </View>
+  const icon = (
+    <SymbolView
+      name={{
+        ios: symbol,
+        android: symbol === 'car.fill' ? 'directions_car' : symbol === 'location.fill' ? 'location_on' : 'auto_awesome',
+        web: symbol === 'car.fill' ? 'directions_car' : symbol === 'location.fill' ? 'location_on' : 'auto_awesome',
+      }}
+      size={21}
+      tintColor={palette.text}
+      weight="semibold"
+    />
   );
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [styles.quickActionPressable, pressed && styles.pressed]}
-    >
+    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.quickAction, pressed && styles.pressed]}>
       {nativeGlass ? (
-        <GlassView isInteractive glassEffectStyle="regular" style={styles.quickActionSurface}>
-          {content}
-        </GlassView>
+        <GlassView isInteractive glassEffectStyle="regular" style={styles.quickActionCircle}>{icon}</GlassView>
       ) : (
-        <View
-          style={[
-            styles.quickActionSurface,
-            { backgroundColor: palette.surface, borderColor: palette.hairline },
-          ]}
-        >
-          {content}
-        </View>
+        <View style={[styles.quickActionCircle, styles.fallbackGlass, { borderColor: palette.hairline }]}>{icon}</View>
       )}
+      <Text style={[styles.quickActionLabel, { color: palette.secondary }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -106,6 +90,7 @@ function CarRail({ cars }: { cars: CatalogCar[] }) {
       horizontal
       showsHorizontalScrollIndicator={false}
       decelerationRate="fast"
+      snapToAlignment="start"
       contentContainerStyle={styles.railContent}
     >
       {cars.slice(0, 8).map((car) => <CarCard key={car.id} car={car} variant="rail" />)}
@@ -126,7 +111,7 @@ export default function HomeScreen() {
       setError(null);
       setCars(await getCatalog(100));
     } catch {
-      setError('Не удалось обновить каталог. Потяните экран вниз, чтобы повторить.');
+      setError('Не удалось обновить каталог. Потяните вниз, чтобы повторить.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -156,19 +141,24 @@ export default function HomeScreen() {
             contentFit="contain"
             style={styles.wordmark}
           />
-          <Text style={[styles.catalogCount, { color: palette.secondary }]}>
-            {available.length ? `${available.length} авто` : 'Каталог'}
-          </Text>
+          <Pressable onPress={() => router.push('/more')} style={({ pressed }) => pressed && styles.pressed}>
+            <View style={[styles.profileButton, { backgroundColor: palette.fill }]}>
+              <SymbolView name={{ ios: 'ellipsis.circle.fill', android: 'more_horiz', web: 'more_horiz' }} size={25} tintColor={palette.secondary} />
+            </View>
+          </Pressable>
         </View>
 
-        <View style={styles.intro}>
-          <Text style={[styles.largeTitle, { color: palette.text }]}>Автомобили</Text>
-          <Text style={[styles.introText, { color: palette.secondary }]}>В наличии, в шоуруме и в пути.</Text>
+        <View style={styles.welcomeRow}>
+          <View style={styles.welcomeCopy}>
+            <Text style={[styles.largeTitle, { color: palette.text }]}>Добро пожаловать</Text>
+            <Text style={[styles.introText, { color: palette.secondary }]}>Выберите автомобиль в своём ритме.</Text>
+          </View>
+          <Text style={[styles.catalogCount, { color: palette.secondary }]}>{available.length ? `${available.length} авто` : 'Каталог'}</Text>
         </View>
 
         <View style={styles.quickActions}>
           <QuickAction label="Каталог" symbol="car.fill" onPress={() => router.push('/catalog')} />
-          <QuickAction label="Локация" symbol="location.fill" onPress={() => void Linking.openURL(YANDEX_MAPS)} />
+          <QuickAction label="Шоурум" symbol="location.fill" onPress={() => void Linking.openURL(YANDEX_MAPS)} />
           <QuickAction label="Подбор" symbol="sparkles" onPress={() => void Linking.openURL('https://autosaleumar.com/request-car/')} />
         </View>
 
@@ -176,31 +166,34 @@ export default function HomeScreen() {
         {error ? <Text style={[styles.error, { color: palette.secondary }]}>{error}</Text> : null}
 
         {featured ? (
-          <View style={styles.sectionCompact}>
-            <SectionHeading eyebrow="РЕКОМЕНДУЕМ" title="Выбор сегодня" />
+          <View style={styles.featuredSection}>
+            <SectionHeading title="Рекомендуем" />
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`Открыть ${featured.brand} ${featured.model}`}
               onPress={() => router.push({ pathname: '/car/[slug]', params: { slug: featured.slug } })}
-              style={({ pressed }) => [
-                styles.featuredCard,
-                { backgroundColor: palette.surface, borderColor: palette.hairline },
-                pressed && styles.pressed,
-              ]}
+              style={({ pressed }) => pressed && styles.pressed}
             >
-              <View style={[styles.featuredImageWrap, { backgroundColor: palette.elevated }]}> 
-                {featuredImage ? <Image source={featuredImage} contentFit="contain" transition={180} style={StyleSheet.absoluteFill} /> : null}
-                <View style={styles.featuredStatus}>
-                  <Text style={styles.featuredStatusText}>{statusLabel(featured.status)}</Text>
+              <View style={[styles.featuredImageWrap, { backgroundColor: palette.elevated, borderColor: palette.hairline }]}> 
+                {featuredImage ? <Image source={featuredImage} contentFit="contain" transition={160} style={StyleSheet.absoluteFill} /> : null}
+                <View style={[styles.featuredStatus, styles.fallbackGlass, { borderColor: palette.hairline }]}>
+                  <Text style={[styles.featuredStatusText, { color: palette.text }]}>{statusLabel(featured.status)}</Text>
                 </View>
               </View>
+
               <View style={styles.featuredCopy}>
-                <Text style={[styles.featuredBrand, { color: palette.secondary }]}>{featured.brand.toUpperCase()}</Text>
+                <View style={styles.featuredTopline}>
+                  <Text style={[styles.featuredBrand, { color: palette.secondary }]}>{featured.brand.toUpperCase()}</Text>
+                  {featured.year ? <Text style={[styles.featuredYear, { color: palette.tertiary }]}>{featured.year}</Text> : null}
+                </View>
                 <Text numberOfLines={1} style={[styles.featuredModel, { color: palette.text }]}>{featured.model}</Text>
                 {featured.trim ? <Text numberOfLines={1} style={[styles.featuredTrim, { color: palette.secondary }]}>{featured.trim}</Text> : null}
                 <View style={styles.featuredMeta}>
                   <Text style={[styles.featuredPrice, { color: palette.text }]}>{formatPrice(featured)}</Text>
-                  {featured.year ? <Text style={[styles.featuredYear, { color: palette.secondary }]}>{featured.year}</Text> : null}
+                  <View style={[styles.detailButton, { backgroundColor: palette.fill }]}>
+                    <Text style={[styles.detailButtonText, { color: palette.text }]}>Подробнее</Text>
+                    <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={12} tintColor={palette.secondary} weight="semibold" />
+                  </View>
                 </View>
               </View>
             </Pressable>
@@ -209,50 +202,54 @@ export default function HomeScreen() {
 
         {showroom.length ? (
           <View style={styles.section}>
-            <SectionHeading eyebrow="В ШОУРУМЕ" title="Можно посмотреть сегодня" action={() => router.push('/catalog')} />
+            <SectionHeading title="В шоуруме" action={() => router.push('/catalog')} />
             <CarRail cars={showroom} />
           </View>
         ) : null}
 
         {stock.length ? (
           <View style={styles.section}>
-            <SectionHeading eyebrow="В НАЛИЧИИ" title="Без ожидания поставки" action={() => router.push('/catalog')} />
+            <SectionHeading title="В наличии" action={() => router.push('/catalog')} />
             <CarRail cars={stock} />
           </View>
         ) : null}
 
         {transit.length ? (
           <View style={styles.section}>
-            <SectionHeading eyebrow="В ПУТИ" title="Следующее поступление" action={() => router.push('/catalog')} />
+            <SectionHeading title="В пути" action={() => router.push('/catalog')} />
             <CarRail cars={transit} />
           </View>
         ) : null}
 
         <View style={styles.section}>
-          <SectionHeading eyebrow="ШОУРУМ" title="Auto Sale Umar · Tashkent" />
+          <SectionHeading title="Шоурум" />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.showroomRail}>
             {SHOWROOM_IMAGES.map((image, index) => (
-              <View key={image} style={[styles.showroomCard, { backgroundColor: palette.surface, borderColor: palette.hairline }]}> 
-                <Image source={image} contentFit="cover" transition={180} style={styles.showroomImage} />
-                <View style={styles.showroomCopy}>
-                  <Text style={[styles.showroomTitle, { color: palette.text }]}>{index === 0 ? 'Коллекция вживую' : 'Персональный просмотр'}</Text>
-                  <Text style={[styles.showroomText, { color: palette.secondary }]}>{index === 0 ? 'Автомобили, которые уже в Ташкенте.' : 'Спокойно, без спешки и лишнего давления.'}</Text>
+              <Pressable key={image} onPress={() => void Linking.openURL(YANDEX_MAPS)} style={({ pressed }) => pressed && styles.pressed}>
+                <View style={[styles.showroomCard, { backgroundColor: palette.surface, borderColor: palette.hairline }]}> 
+                  <Image source={image} contentFit="cover" transition={160} style={styles.showroomImage} />
+                  <View style={styles.showroomCopy}>
+                    <Text style={[styles.showroomTitle, { color: palette.text }]}>{index === 0 ? 'Посмотреть автомобили' : 'Запланировать визит'}</Text>
+                    <Text numberOfLines={2} style={[styles.showroomText, { color: palette.secondary }]}>{index === 0 ? 'Коллекция Auto Sale Umar в Ташкенте.' : 'Откройте локацию шоурума в Яндекс Картах.'}</Text>
+                  </View>
                 </View>
-              </View>
+              </Pressable>
             ))}
           </ScrollView>
         </View>
 
-        <View style={styles.section}>
+        <Pressable onPress={() => void Linking.openURL('https://autosaleumar.com/request-car/')} style={({ pressed }) => [styles.supplyPressable, pressed && styles.pressed]}>
           <View style={[styles.supplyCard, { backgroundColor: palette.surface, borderColor: palette.hairline }]}> 
-            <Text style={[styles.eyebrow, { color: palette.secondary }]}>МЕЖДУНАРОДНАЯ ПОСТАВКА</Text>
-            <Text style={[styles.supplyTitle, { color: palette.text }]}>Найдём нужную комплектацию.</Text>
-            <Text style={[styles.supplyText, { color: palette.secondary }]}>США, Канада, Корея, ОАЭ и другие рынки. Статус автомобиля остаётся понятным на каждом этапе.</Text>
-            <Pressable onPress={() => void Linking.openURL('https://autosaleumar.com/request-car/')} hitSlop={8}>
-              <Text style={[styles.supplyLink, { color: palette.accent }]}>Оставить запрос</Text>
-            </Pressable>
+            <View style={[styles.supplyIcon, { backgroundColor: palette.fill }]}>
+              <SymbolView name={{ ios: 'globe', android: 'public', web: 'public' }} size={21} tintColor={palette.text} weight="medium" />
+            </View>
+            <View style={styles.supplyCopy}>
+              <Text style={[styles.supplyTitle, { color: palette.text }]}>Найти автомобиль</Text>
+              <Text style={[styles.supplyText, { color: palette.secondary }]}>США, Канада, Корея, ОАЭ и другие рынки.</Text>
+            </View>
+            <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={14} tintColor={palette.secondary} weight="semibold" />
           </View>
-        </View>
+        </Pressable>
 
         <View style={styles.footer}>
           <Image source={dark ? require('@/assets/wordmark-white.png') : require('@/assets/wordmark-black.png')} contentFit="contain" style={styles.footerLogo} />
@@ -264,52 +261,57 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  content: { width: '100%', paddingHorizontal: 20, paddingTop: 2, paddingBottom: 110 },
+  content: { width: '100%', paddingHorizontal: 18, paddingTop: 4, paddingBottom: 118 },
   shell: { width: '100%', maxWidth: 680, alignSelf: 'center' },
   topbar: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 },
-  wordmark: { width: 132, height: 27 },
-  catalogCount: { fontSize: 13, lineHeight: 18, fontWeight: '500' },
-  intro: { paddingTop: 16, paddingBottom: 18 },
+  wordmark: { width: 137, height: 29 },
+  profileButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  welcomeRow: { paddingTop: 15, paddingBottom: 18, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 },
+  welcomeCopy: { flex: 1 },
   largeTitle: { fontSize: 34, lineHeight: 39, fontWeight: '700', letterSpacing: -1.15 },
-  introText: { marginTop: 4, fontSize: 17, lineHeight: 23, letterSpacing: -0.2 },
-  quickActions: { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  quickActionPressable: { flex: 1 },
-  quickActionSurface: { minHeight: 48, borderRadius: 24, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  quickActionContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 10 },
-  quickActionLabel: { fontSize: 14, lineHeight: 18, fontWeight: '600', letterSpacing: -0.1 },
-  pressed: { transform: [{ scale: 0.985 }], opacity: 0.92 },
+  introText: { marginTop: 3, fontSize: 16, lineHeight: 22, letterSpacing: -0.18 },
+  catalogCount: { fontSize: 13, lineHeight: 18, fontWeight: '500', paddingBottom: 2 },
+  quickActions: { flexDirection: 'row', justifyContent: 'flex-start', gap: 26, marginBottom: 8 },
+  quickAction: { width: 62, alignItems: 'center' },
+  quickActionCircle: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  fallbackGlass: { backgroundColor: 'rgba(255,255,255,0.78)', borderWidth: StyleSheet.hairlineWidth },
+  quickActionLabel: { marginTop: 6, fontSize: 11, lineHeight: 14, fontWeight: '500', letterSpacing: -0.1, textAlign: 'center' },
+  pressed: { transform: [{ scale: 0.985 }], opacity: 0.91 },
   loader: { paddingVertical: 24 },
   error: { paddingVertical: 16, fontSize: 15, lineHeight: 21 },
-  sectionCompact: { paddingTop: 26 },
-  section: { paddingTop: 42 },
-  sectionHeading: { marginBottom: 16, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 },
-  sectionHeadingCopy: { flex: 1 },
-  eyebrow: { fontSize: 11, lineHeight: 14, fontWeight: '700', letterSpacing: 1.15 },
-  sectionTitle: { marginTop: 6, fontSize: 25, lineHeight: 29, fontWeight: '700', letterSpacing: -0.75 },
-  sectionAction: { paddingBottom: 2, fontSize: 15, lineHeight: 20, fontWeight: '500' },
-  featuredCard: { width: '100%', borderRadius: 28, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth },
-  featuredImageWrap: { width: '100%', aspectRatio: 1.48, position: 'relative' },
-  featuredStatus: { position: 'absolute', left: 14, top: 14, minHeight: 30, paddingHorizontal: 11, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.68)' },
-  featuredStatusText: { color: '#FFFFFF', fontSize: 12, lineHeight: 15, fontWeight: '600' },
-  featuredCopy: { paddingHorizontal: 17, paddingTop: 15, paddingBottom: 17 },
-  featuredBrand: { fontSize: 11, lineHeight: 14, fontWeight: '700', letterSpacing: 0.8 },
-  featuredModel: { marginTop: 4, fontSize: 24, lineHeight: 28, fontWeight: '700', letterSpacing: -0.65 },
-  featuredTrim: { marginTop: 2, fontSize: 15, lineHeight: 20 },
-  featuredMeta: { marginTop: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 14 },
-  featuredPrice: { flex: 1, fontSize: 18, lineHeight: 22, fontWeight: '600', letterSpacing: -0.25 },
-  featuredYear: { fontSize: 14, lineHeight: 19, fontWeight: '500' },
-  railContent: { gap: 12, paddingRight: 8 },
+  featuredSection: { paddingTop: 28 },
+  section: { paddingTop: 40 },
+  sectionHeading: { marginBottom: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 },
+  sectionTitle: { flex: 1, fontSize: 23, lineHeight: 28, fontWeight: '700', letterSpacing: -0.65 },
+  sectionActionInner: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  sectionAction: { fontSize: 14, lineHeight: 18, fontWeight: '500' },
+  featuredImageWrap: { width: '100%', aspectRatio: 1.46, position: 'relative', borderRadius: 30, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth },
+  featuredStatus: { position: 'absolute', left: 13, top: 13, minHeight: 31, paddingHorizontal: 11, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  featuredStatusText: { fontSize: 11, lineHeight: 14, fontWeight: '600' },
+  featuredCopy: { paddingHorizontal: 3, paddingTop: 13 },
+  featuredTopline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  featuredBrand: { flex: 1, fontSize: 10, lineHeight: 13, fontWeight: '700', letterSpacing: 0.8 },
+  featuredModel: { marginTop: 3, fontSize: 26, lineHeight: 30, fontWeight: '700', letterSpacing: -0.8 },
+  featuredTrim: { marginTop: 2, fontSize: 14, lineHeight: 19 },
+  featuredYear: { fontSize: 12, lineHeight: 15, fontWeight: '500' },
+  featuredMeta: { marginTop: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  featuredPrice: { flex: 1, fontSize: 17, lineHeight: 21, fontWeight: '600', letterSpacing: -0.2 },
+  detailButton: { minHeight: 34, borderRadius: 17, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  detailButtonText: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
+  railContent: { gap: 14, paddingRight: 8 },
   showroomRail: { gap: 12, paddingRight: 8 },
-  showroomCard: { width: 286, borderRadius: 26, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
+  showroomCard: { width: 282, borderRadius: 26, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   showroomImage: { width: '100%', aspectRatio: 1.42 },
   showroomCopy: { padding: 15 },
-  showroomTitle: { fontSize: 18, lineHeight: 22, fontWeight: '600', letterSpacing: -0.3 },
-  showroomText: { marginTop: 4, fontSize: 14, lineHeight: 19 },
-  supplyCard: { borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, padding: 20 },
-  supplyTitle: { marginTop: 7, fontSize: 24, lineHeight: 28, fontWeight: '700', letterSpacing: -0.7 },
-  supplyText: { marginTop: 10, fontSize: 15, lineHeight: 21 },
-  supplyLink: { marginTop: 16, fontSize: 16, lineHeight: 21, fontWeight: '600' },
-  footer: { paddingTop: 54, paddingBottom: 10, alignItems: 'flex-start' },
-  footerLogo: { width: 118, height: 24 },
-  footerText: { marginTop: 7, fontSize: 12, lineHeight: 16 },
+  showroomTitle: { fontSize: 17, lineHeight: 21, fontWeight: '600', letterSpacing: -0.25 },
+  showroomText: { marginTop: 4, fontSize: 13, lineHeight: 18 },
+  supplyPressable: { paddingTop: 40 },
+  supplyCard: { minHeight: 86, borderRadius: 25, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  supplyIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  supplyCopy: { flex: 1 },
+  supplyTitle: { fontSize: 16, lineHeight: 20, fontWeight: '600', letterSpacing: -0.2 },
+  supplyText: { marginTop: 2, fontSize: 13, lineHeight: 18 },
+  footer: { paddingTop: 48, paddingBottom: 8, alignItems: 'flex-start' },
+  footerLogo: { width: 112, height: 23 },
+  footerText: { marginTop: 7, fontSize: 11, lineHeight: 15 },
 });

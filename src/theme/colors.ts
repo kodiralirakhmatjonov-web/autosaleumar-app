@@ -6,8 +6,8 @@ function systemColor(name: string, fallback: string): ColorValue {
 
 export const colors = {
   light: {
-    background: systemColor('systemGroupedBackground', '#F5F5F7'),
-    surface: systemColor('secondarySystemGroupedBackground', '#FFFFFF'),
+    background: systemColor('systemBackground', '#FFFFFF'),
+    surface: systemColor('secondarySystemBackground', '#F8F8FA'),
     elevated: systemColor('systemBackground', '#FFFFFF'),
     text: systemColor('label', '#111111'),
     secondary: systemColor('secondaryLabel', '#6E6E73'),

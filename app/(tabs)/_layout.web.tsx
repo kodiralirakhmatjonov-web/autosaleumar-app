@@ -1,4 +1,34 @@
 import { Tabs } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
+import type { ComponentProps } from 'react';
+
+const glassTabBarStyle = {
+  position: 'absolute',
+  left: 14,
+  right: 14,
+  bottom: 10,
+  height: 70,
+  paddingTop: 7,
+  paddingBottom: 7,
+  borderTopWidth: 0,
+  borderWidth: 1,
+  borderColor: 'rgba(255,255,255,0.72)',
+  borderRadius: 35,
+  backgroundColor: 'rgba(248,248,250,0.78)',
+  boxShadow: '0 14px 42px rgba(0,0,0,0.13), inset 0 0 0 0.5px rgba(0,0,0,0.05)',
+  backdropFilter: 'blur(28px) saturate(180%)',
+  WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+} as const;
+
+function TabIcon({
+  name,
+  color,
+}: {
+  name: ComponentProps<typeof SymbolView>['name'];
+  color: string;
+}) {
+  return <SymbolView name={name} size={21} tintColor={color} weight="semibold" />;
+}
 
 export default function WebTabLayout() {
   return (
@@ -6,31 +36,41 @@ export default function WebTabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: '#111111',
-        tabBarInactiveTintColor: '#8A8A90',
+        tabBarInactiveTintColor: '#8E8E93',
         tabBarHideOnKeyboard: true,
-        tabBarIcon: () => null,
-        tabBarStyle: {
-          height: 60,
-          paddingTop: 8,
-          paddingBottom: 8,
-          borderTopWidth: 1,
-          borderTopColor: 'rgba(60,60,67,0.12)',
-          backgroundColor: 'rgba(250,250,252,0.98)',
-        },
-        tabBarItemStyle: {
-          paddingTop: 3,
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          lineHeight: 16,
-          fontWeight: '600',
-        },
+        tabBarStyle: glassTabBarStyle as never,
+        tabBarItemStyle: { borderRadius: 26, paddingTop: 2 },
+        tabBarLabelStyle: { fontSize: 10.5, lineHeight: 13, fontWeight: '600', marginTop: 1 },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Главная' }} />
-      <Tabs.Screen name="catalog" options={{ title: 'Авто' }} />
-      <Tabs.Screen name="saved" options={{ title: 'Избранное' }} />
-      <Tabs.Screen name="more" options={{ title: 'Ещё' }} />
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Главная',
+          tabBarIcon: ({ focused, color }) => <TabIcon name={{ ios: focused ? 'house.fill' : 'house', android: 'home', web: 'home' }} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="catalog"
+        options={{
+          title: 'Авто',
+          tabBarIcon: ({ focused, color }) => <TabIcon name={{ ios: focused ? 'car.fill' : 'car', android: 'directions_car', web: 'directions_car' }} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="saved"
+        options={{
+          title: 'Избранное',
+          tabBarIcon: ({ focused, color }) => <TabIcon name={{ ios: focused ? 'heart.fill' : 'heart', android: 'favorite', web: 'favorite' }} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="more"
+        options={{
+          title: 'Ещё',
+          tabBarIcon: ({ focused, color }) => <TabIcon name={{ ios: 'ellipsis', android: 'more_horiz', web: 'more_horiz' }} color={color} />,
+        }}
+      />
       <Tabs.Screen name="page" options={{ href: null }} />
     </Tabs>
   );
