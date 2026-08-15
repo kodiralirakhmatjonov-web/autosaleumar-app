@@ -7,9 +7,17 @@ export default function RootLayout() {
   return (
     <>
       <StatusBar style={dark ? 'light' : 'dark'} />
-      <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="car/[slug]" options={{ presentation: 'card' }} />
+      <Stack screenOptions={{ animation: 'default' }}>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="car/[slug]"
+          options={{
+            headerShown: true,
+            headerTitle: '',
+            headerTransparent: true,
+            headerShadowVisible: false,
+          }}
+        />
       </Stack>
     </>
   );

@@ -8,13 +8,15 @@ import { colors } from '@/src/theme/colors';
 
 type CarCardVariant = 'full' | 'rail';
 
-export function CarCard({ car, hero = false, variant = 'full' }: { car: CatalogCar; hero?: boolean; variant?: CarCardVariant }) {
+export function CarCard({ car, variant = 'full' }: { car: CatalogCar; variant?: CarCardVariant }) {
   const palette = colors[useColorScheme() === 'dark' ? 'dark' : 'light'];
   const image = absoluteMediaUrl(car.coverUrl ?? car.variants?.[0]?.photos?.[0]?.url);
   const rail = variant === 'rail';
 
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${car.brand} ${car.model}`}
       onPress={() => router.push({ pathname: '/car/[slug]', params: { slug: car.slug } })}
       style={({ pressed }) => [
         styles.card,
@@ -23,22 +25,24 @@ export function CarCard({ car, hero = false, variant = 'full' }: { car: CatalogC
         pressed && styles.pressed,
       ]}
     >
-      <View style={[styles.imageWrap, hero && styles.heroImageWrap, rail && styles.railImageWrap]}>
+      <View style={[styles.imageWrap, { backgroundColor: palette.elevated }]}> 
         {image ? (
-          <Image source={image} contentFit="cover" transition={220} style={StyleSheet.absoluteFill} />
-        ) : (
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: palette.background }]} />
-        )}
-        <View style={styles.status}>
-          <Text style={styles.statusText}>{statusLabel(car.status)}</Text>
+          <Image source={image} contentFit="contain" transition={180} style={StyleSheet.absoluteFill} />
+        ) : null}
+        <View style={[styles.status, { backgroundColor: palette.fill }]}>
+          <Text style={[styles.statusText, { color: palette.text }]}>{statusLabel(car.status)}</Text>
         </View>
       </View>
-      <View style={[styles.copy, rail && styles.railCopy]}>
-        <Text numberOfLines={1} style={[styles.brand, { color: palette.secondary }]}>{car.brand}</Text>
-        <Text numberOfLines={2} style={[styles.model, rail && styles.railModel, { color: palette.text }]}>
+
+      <View style={styles.copy}>
+        <Text numberOfLines={1} style={[styles.brand, { color: palette.secondary }]}>{car.brand.toUpperCase()}</Text>
+        <Text numberOfLines={2} style={[styles.model, rail && styles.railModel, { color: palette.text }]}> 
           {car.model}{car.trim ? ` ${car.trim}` : ''}
         </Text>
-        <Text style={[styles.price, rail && styles.railPrice, { color: palette.text }]}>{formatPrice(car)}</Text>
+        <View style={styles.metaRow}>
+          <Text numberOfLines={1} style={[styles.price, { color: palette.text }]}>{formatPrice(car)}</Text>
+          {car.year ? <Text style={[styles.year, { color: palette.secondary }]}>{car.year}</Text> : null}
+        </View>
       </View>
     </Pressable>
   );
@@ -46,30 +50,30 @@ export function CarCard({ car, hero = false, variant = 'full' }: { car: CatalogC
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 30,
+    width: '100%',
+    borderRadius: 26,
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
   },
-  railCard: { width: 286, borderRadius: 32 },
-  pressed: { transform: [{ scale: 0.985 }], opacity: 0.93 },
-  imageWrap: { aspectRatio: 1.2, position: 'relative', backgroundColor: '#ECECEF' },
-  heroImageWrap: { aspectRatio: 1.02 },
-  railImageWrap: { aspectRatio: 1.28 },
+  railCard: { width: 292, maxWidth: '82%' },
+  pressed: { transform: [{ scale: 0.985 }], opacity: 0.94 },
+  imageWrap: { aspectRatio: 1.46, position: 'relative' },
   status: {
     position: 'absolute',
-    left: 14,
-    top: 14,
-    borderRadius: 999,
+    left: 12,
+    top: 12,
+    minHeight: 30,
+    borderRadius: 15,
     paddingHorizontal: 11,
-    paddingVertical: 7,
-    backgroundColor: 'rgba(17,17,17,0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  statusText: { color: '#fff', fontSize: 12, fontWeight: '600' },
-  copy: { padding: 18, gap: 4 },
-  railCopy: { padding: 16 },
-  brand: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8 },
-  model: { fontSize: 22, lineHeight: 25, fontWeight: '700', letterSpacing: -0.55 },
+  statusText: { fontSize: 12, fontWeight: '600', letterSpacing: -0.1 },
+  copy: { padding: 16, gap: 4 },
+  brand: { fontSize: 11, fontWeight: '700', letterSpacing: 0.75 },
+  model: { fontSize: 21, lineHeight: 24, fontWeight: '700', letterSpacing: -0.55 },
   railModel: { fontSize: 20, lineHeight: 23 },
-  price: { fontSize: 18, fontWeight: '600', marginTop: 7 },
-  railPrice: { fontSize: 16 },
+  metaRow: { marginTop: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  price: { flex: 1, fontSize: 16, fontWeight: '600', letterSpacing: -0.2 },
+  year: { fontSize: 14, fontWeight: '500' },
 });

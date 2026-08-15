@@ -1,6 +1,16 @@
 import { useLocalSearchParams } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useColorScheme } from 'react-native';
+import {
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useColorScheme,
+} from 'react-native';
 import { CarCard } from '@/src/components/CarCard';
 import { getCatalog } from '@/src/lib/api';
 import type { CatalogCar } from '@/src/lib/types';
@@ -34,26 +44,43 @@ export default function CatalogScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}
       contentContainerStyle={styles.content}
     >
-      <Text style={[styles.kicker, { color: palette.secondary }]}>КАТАЛОГ</Text>
-      <Text style={[styles.title, { color: palette.text }]}>Автомобили</Text>
-      <TextInput
-        value={query}
-        onChangeText={setQuery}
-        placeholder="Марка или модель"
-        placeholderTextColor={palette.secondary}
-        style={[styles.search, { backgroundColor: palette.surface, color: palette.text, borderColor: palette.hairline }]}
-      />
-      {loading ? <ActivityIndicator style={{ marginTop: 30 }} /> : null}
-      <View style={styles.grid}>{visible.map((car) => <CarCard key={car.id} car={car} />)}</View>
-      <View style={{ height: 90 }} />
+      <View style={styles.shell}>
+        <Text style={[styles.largeTitle, { color: palette.text }]}>Автомобили</Text>
+        <Text style={[styles.subtitle, { color: palette.secondary }]}>Единый каталог Auto Sale Umar</Text>
+
+        <View style={[styles.search, { backgroundColor: palette.fill }]}> 
+          <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={18} tintColor={palette.secondary} />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Марка или модель"
+            placeholderTextColor={palette.secondary}
+            style={[styles.searchInput, { color: palette.text }]}
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+          />
+        </View>
+
+        <View style={styles.resultRow}>
+          <Text style={[styles.resultText, { color: palette.secondary }]}>{loading ? 'Обновляем каталог…' : `${visible.length} автомобилей`}</Text>
+        </View>
+
+        {loading ? <ActivityIndicator style={styles.loader} /> : null}
+        <View style={styles.grid}>{visible.map((car) => <CarCard key={car.id} car={car} />)}</View>
+      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 18, paddingTop: 30, gap: 16 },
-  kicker: { fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
-  title: { fontSize: 38, fontWeight: '700', letterSpacing: -1.4 },
-  search: { borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 17, height: 54, fontSize: 17 },
-  grid: { gap: 16 },
+  content: { width: '100%', paddingHorizontal: 16, paddingTop: 22, paddingBottom: 112 },
+  shell: { width: '100%', maxWidth: 720, alignSelf: 'center' },
+  largeTitle: { fontSize: 34, lineHeight: 39, fontWeight: '700', letterSpacing: -1.2 },
+  subtitle: { marginTop: 4, fontSize: 15, lineHeight: 21 },
+  search: { marginTop: 22, height: 48, borderRadius: 16, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  searchInput: { flex: 1, height: '100%', fontSize: 17, letterSpacing: -0.2 },
+  resultRow: { paddingTop: 15, paddingBottom: 12 },
+  resultText: { fontSize: 13, fontWeight: '500' },
+  loader: { paddingVertical: 30 },
+  grid: { gap: 14 },
 });
