@@ -1,9 +1,10 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useColorScheme } from 'react-native';
+import { Platform, useColorScheme } from 'react-native';
 
 export default function RootLayout() {
   const dark = useColorScheme() === 'dark';
+
   return (
     <>
       <StatusBar style={dark ? 'light' : 'dark'} />
@@ -12,7 +13,7 @@ export default function RootLayout() {
         <Stack.Screen
           name="car/[slug]"
           options={{
-            headerShown: true,
+            headerShown: Platform.OS !== 'web',
             headerTitle: '',
             headerTransparent: true,
             headerShadowVisible: false,

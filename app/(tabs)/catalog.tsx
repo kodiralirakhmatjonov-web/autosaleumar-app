@@ -1,11 +1,8 @@
-import { useLocalSearchParams } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import {
   ActivityIndicator,
-  Platform,
   Pressable,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,147 +10,180 @@ import {
   View,
   useColorScheme,
 } from 'react-native';
-import { GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
+import { AdaptiveGlass } from '@/src/components/AdaptiveGlass';
 import { CarCard } from '@/src/components/CarCard';
 import { getCatalog } from '@/src/lib/api';
 import type { CatalogCar, CarStatus } from '@/src/lib/types';
 import { colors } from '@/src/theme/colors';
 
-type FilterKey = 'all' | 'showroom' | 'stock' | 'transit';
+type StatusFilter = 'all' | 'showroom' | 'stock' | 'transit';
 
-const FILTERS: Array<{ key: FilterKey; label: string; statuses?: CarStatus[] }> = [
+const statusFilters: Array<{ key: StatusFilter; label: string; statuses?: CarStatus[] }> = [
   { key: 'all', label: 'Все' },
   { key: 'showroom', label: 'В шоуруме', statuses: ['in_showroom'] },
-  { key: 'stock', label: 'В наличии', statuses: ['in_stock'] },
+  { key: 'stock', label: 'В наличии', statuses: ['in_stock', 'in_showroom'] },
   { key: 'transit', label: 'В пути', statuses: ['in_transit', 'made_to_order'] },
 ];
 
-function FilterChip({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
-  const palette = colors[useColorScheme() === 'dark' ? 'dark' : 'light'];
-  const nativeGlass = Platform.OS === 'ios' && isGlassEffectAPIAvailable();
-  const inner = <Text style={[styles.filterLabel, { color: active ? '#FFFFFF' : palette.text }]}>{label}</Text>;
-
-  return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => pressed && styles.chipPressed}>
-      {nativeGlass && !active ? (
-        <GlassView isInteractive glassEffectStyle="regular" style={styles.filterChip}>{inner}</GlassView>
-      ) : (
-        <View
-          style={[
-            styles.filterChip,
-            active ? styles.filterChipActive : styles.filterChipFallback,
-            !active && { borderColor: palette.hairline },
-          ]}
-        >
-          {inner}
-        </View>
-      )}
-    </Pressable>
-  );
-}
-
 export default function CatalogScreen() {
   const palette = colors[useColorScheme() === 'dark' ? 'dark' : 'light'];
-  const params = useLocalSearchParams<{ q?: string }>();
   const [cars, setCars] = useState<CatalogCar[]>([]);
-  const [query, setQuery] = useState(typeof params.q === 'string' ? params.q : '');
-  const [filter, setFilter] = useState<FilterKey>('all');
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState<StatusFilter>('all');
+  const [brand, setBrand] = useState('Все');
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      setCars(await getCatalog());
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+  useEffect(() => {
+    getCatalog(100).then(setCars).finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
-  useEffect(() => { if (typeof params.q === 'string') setQuery(params.q); }, [params.q]);
+  const brands = useMemo(() => ['Все', ...Array.from(new Set(cars.map((car) => car.brand))).sort((a, b) => a.localeCompare(b))], [cars]);
 
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const selected = FILTERS.find((item) => item.key === filter);
+  const filtered = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    const selectedStatuses = statusFilters.find((item) => item.key === status)?.statuses;
+
     return cars.filter((car) => {
-      if (car.status === 'hidden') return false;
-      if (selected?.statuses && !selected.statuses.includes(car.status)) return false;
-      if (!q) return true;
-      return `${car.brand} ${car.model} ${car.trim ?? ''}`.toLowerCase().includes(q);
+      if (['hidden', 'sold'].includes(car.status)) return false;
+      if (selectedStatuses && !selectedStatuses.includes(car.status)) return false;
+      if (brand !== 'Все' && car.brand !== brand) return false;
+      if (!normalized) return true;
+      return `${car.brand} ${car.model} ${car.trim ?? ''} ${car.year ?? ''}`.toLowerCase().includes(normalized);
     });
-  }, [cars, filter, query]);
+  }, [brand, cars, query, status]);
 
   return (
     <ScrollView
       style={{ backgroundColor: palette.background }}
       contentInsetAdjustmentBehavior="automatic"
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}
+      keyboardShouldPersistTaps="handled"
       contentContainerStyle={styles.content}
     >
       <View style={styles.shell}>
         <View style={styles.headerRow}>
           <View style={styles.headerCopy}>
-            <Text style={[styles.largeTitle, { color: palette.text }]}>Автомобили</Text>
-            <Text style={[styles.subtitle, { color: palette.secondary }]}>Коллекция Auto Sale Umar</Text>
+            <Text style={[styles.kicker, { color: palette.secondary }]}>AUTO SALE UMAR</Text>
+            <Text style={[styles.title, { color: palette.text }]}>Автомобили</Text>
+            <Text style={[styles.subtitle, { color: palette.secondary }]}>Каталог, статусы и комплектации в одной ленте.</Text>
           </View>
-          <View style={[styles.countBadge, { backgroundColor: palette.fill }]}>
-            <Text style={[styles.countBadgeText, { color: palette.secondary }]}>{cars.filter((car) => car.status !== 'hidden').length}</Text>
-          </View>
+          <AdaptiveGlass style={styles.headerCount}>
+            <Text style={[styles.headerCountText, { color: palette.text }]}>{cars.filter((car) => !['hidden', 'sold'].includes(car.status)).length}</Text>
+          </AdaptiveGlass>
         </View>
 
-        <View style={[styles.search, styles.webGlass, { backgroundColor: palette.fill, borderColor: palette.hairline }]}> 
-          <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={18} tintColor={palette.secondary} weight="medium" />
+        <View style={[styles.search, { backgroundColor: palette.surface, borderColor: palette.hairline }]}>
+          <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={18} tintColor={palette.secondary} />
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="Поиск"
-            placeholderTextColor={palette.secondary}
+            placeholder="Марка, модель или комплектация"
+            placeholderTextColor={palette.tertiary as string}
             style={[styles.searchInput, { color: palette.text }]}
+            autoCapitalize="none"
+            autoCorrect={false}
             returnKeyType="search"
-            clearButtonMode="while-editing"
           />
+          {query ? (
+            <Pressable onPress={() => setQuery('')} hitSlop={10}>
+              <SymbolView name={{ ios: 'xmark.circle.fill', android: 'cancel', web: 'cancel' }} size={18} tintColor={palette.tertiary} />
+            </Pressable>
+          ) : null}
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
-          {FILTERS.map((item) => (
-            <FilterChip key={item.key} label={item.label} active={filter === item.key} onPress={() => setFilter(item.key)} />
-          ))}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRail}>
+          {statusFilters.map((item) => {
+            const active = status === item.key;
+            return (
+              <Pressable key={item.key} onPress={() => setStatus(item.key)} style={({ pressed }) => pressed && styles.pressed}>
+                {active ? (
+                  <View style={[styles.filterPill, { backgroundColor: palette.text }]}>
+                    <Text style={[styles.filterText, { color: palette.background }]}>{item.label}</Text>
+                  </View>
+                ) : (
+                  <AdaptiveGlass interactive style={styles.filterPill}>
+                    <Text style={[styles.filterText, { color: palette.text }]}>{item.label}</Text>
+                  </AdaptiveGlass>
+                )}
+              </Pressable>
+            );
+          })}
         </ScrollView>
 
-        <View style={styles.resultRow}>
-          <Text style={[styles.resultText, { color: palette.secondary }]}>
-            {loading ? 'Обновляем каталог…' : `${visible.length} ${visible.length === 1 ? 'автомобиль' : 'автомобилей'}`}
-          </Text>
+        <View style={styles.brandHeader}>
+          <Text style={[styles.brandHeaderTitle, { color: palette.text }]}>Марки</Text>
+          <Text style={[styles.resultCount, { color: palette.secondary }]}>{filtered.length} авто</Text>
+        </View>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.brandRail}>
+          {brands.map((item) => {
+            const active = brand === item;
+            return (
+              <Pressable key={item} onPress={() => setBrand(item)} style={({ pressed }) => pressed && styles.pressed}>
+                <View style={[styles.brandPill, { backgroundColor: active ? palette.text : palette.surface, borderColor: active ? palette.text : palette.hairline }]}>
+                  <Text style={[styles.brandText, { color: active ? palette.background : palette.text }]}>{item}</Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        <View style={styles.resultHeader}>
+          <View>
+            <Text style={[styles.resultKicker, { color: palette.secondary }]}>SELECTION</Text>
+            <Text style={[styles.resultTitle, { color: palette.text }]}>{status === 'showroom' ? 'В шоуруме' : status === 'stock' ? 'В наличии' : status === 'transit' ? 'В пути' : 'Все автомобили'}</Text>
+          </View>
+          <AdaptiveGlass style={styles.sortButton}>
+            <SymbolView name={{ ios: 'line.3.horizontal.decrease', android: 'filter_list', web: 'filter_list' }} size={17} tintColor={palette.text} weight="semibold" />
+          </AdaptiveGlass>
         </View>
 
         {loading ? <ActivityIndicator style={styles.loader} /> : null}
-        <View style={styles.grid}>{visible.map((car) => <CarCard key={car.id} car={car} />)}</View>
+
+        {!loading && filtered.length === 0 ? (
+          <View style={[styles.empty, { backgroundColor: palette.surface, borderColor: palette.hairline }]}>
+            <SymbolView name={{ ios: 'car', android: 'directions_car', web: 'directions_car' }} size={28} tintColor={palette.secondary} />
+            <Text style={[styles.emptyTitle, { color: palette.text }]}>Ничего не найдено</Text>
+            <Text style={[styles.emptyText, { color: palette.secondary }]}>Измените поиск, марку или статус.</Text>
+          </View>
+        ) : null}
+
+        <View style={styles.list}>
+          {filtered.map((car) => <CarCard key={car.id} car={car} />)}
+        </View>
       </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  content: { width: '100%', paddingHorizontal: 18, paddingTop: 12, paddingBottom: 118 },
-  shell: { width: '100%', maxWidth: 680, alignSelf: 'center' },
-  headerRow: { minHeight: 68, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 },
+  content: { width: '100%', paddingHorizontal: 16, paddingTop: 22, paddingBottom: 128 },
+  shell: { width: '100%', maxWidth: 720, alignSelf: 'center' },
+  pressed: { opacity: 0.78 },
+  headerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
   headerCopy: { flex: 1 },
-  largeTitle: { fontSize: 34, lineHeight: 39, fontWeight: '700', letterSpacing: -1.15 },
-  subtitle: { marginTop: 2, fontSize: 15, lineHeight: 20, letterSpacing: -0.15 },
-  countBadge: { minWidth: 34, height: 34, borderRadius: 17, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
-  countBadgeText: { fontSize: 13, lineHeight: 17, fontWeight: '600' },
-  search: { marginTop: 14, height: 50, borderRadius: 20, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: StyleSheet.hairlineWidth },
-  webGlass: { overflow: 'hidden' },
-  searchInput: { flex: 1, height: '100%', fontSize: 17, letterSpacing: -0.22 },
-  filters: { gap: 8, paddingTop: 12, paddingRight: 8 },
-  filterChip: { minHeight: 36, borderRadius: 18, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  filterChipActive: { backgroundColor: '#111111' },
-  filterChipFallback: { backgroundColor: 'rgba(255,255,255,0.76)', borderWidth: StyleSheet.hairlineWidth },
-  filterLabel: { fontSize: 13, lineHeight: 17, fontWeight: '600', letterSpacing: -0.1 },
-  chipPressed: { transform: [{ scale: 0.97 }], opacity: 0.9 },
-  resultRow: { paddingTop: 17, paddingBottom: 13 },
-  resultText: { fontSize: 13, lineHeight: 17, fontWeight: '500' },
-  loader: { paddingVertical: 30 },
-  grid: { gap: 28 },
+  kicker: { fontSize: 9, lineHeight: 12, fontWeight: '700', letterSpacing: 1.55 },
+  title: { marginTop: 7, fontSize: 40, lineHeight: 43, fontWeight: '700', letterSpacing: -1.65 },
+  subtitle: { marginTop: 8, maxWidth: 490, fontSize: 15, lineHeight: 21 },
+  headerCount: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  headerCountText: { fontSize: 14, lineHeight: 18, fontWeight: '700' },
+  search: { marginTop: 25, minHeight: 50, borderRadius: 25, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  searchInput: { flex: 1, minHeight: 48, fontSize: 16, letterSpacing: -0.18, outlineStyle: 'none' } as any,
+  filterRail: { paddingTop: 12, paddingRight: 16, gap: 8 },
+  filterPill: { minHeight: 38, borderRadius: 19, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
+  filterText: { fontSize: 12, lineHeight: 15, fontWeight: '600' },
+  brandHeader: { marginTop: 31, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 },
+  brandHeaderTitle: { fontSize: 20, lineHeight: 24, fontWeight: '700', letterSpacing: -0.4 },
+  resultCount: { fontSize: 12, lineHeight: 16, fontWeight: '500' },
+  brandRail: { paddingTop: 12, paddingRight: 16, gap: 8 },
+  brandPill: { minHeight: 38, borderRadius: 19, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
+  brandText: { fontSize: 12, lineHeight: 15, fontWeight: '600' },
+  resultHeader: { marginTop: 42, marginBottom: 20, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 },
+  resultKicker: { marginBottom: 4, fontSize: 9, lineHeight: 12, fontWeight: '700', letterSpacing: 1.45 },
+  resultTitle: { fontSize: 28, lineHeight: 32, fontWeight: '700', letterSpacing: -0.85 },
+  sortButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  loader: { marginVertical: 40 },
+  list: { width: '100%' },
+  empty: { marginTop: 12, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, padding: 24, alignItems: 'center' },
+  emptyTitle: { marginTop: 13, fontSize: 18, lineHeight: 22, fontWeight: '700' },
+  emptyText: { marginTop: 5, fontSize: 14, lineHeight: 20 },
 });
