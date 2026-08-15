@@ -1,0 +1,57 @@
+name: Deploy app browser preview
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/**"
+      - "src/**"
+      - "assets/**"
+      - "app.json"
+      - "package.json"
+      - "package-lock.json"
+      - "expo-env.d.ts"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: autosaleumar-browser-preview
+  cancel-in-progress: true
+
+jobs:
+  deploy-preview:
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: TypeScript check
+        run: npm run typecheck --if-present
+
+      - name: Verify Expo login
+        run: npx eas-cli@latest whoami
+
+      - name: Export web app
+        run: npx expo export --platform web
+
+      - name: Deploy browser preview
+        run: |
+          npx eas-cli@latest deploy \
+            --alias dev \
+            --dev-domain autosaleumar-mobile-kodirali \
+            --environment development \
+            --non-interactive
