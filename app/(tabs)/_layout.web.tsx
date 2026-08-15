@@ -6,6 +6,6 @@ function Icon({name,color}:{name:ComponentProps<typeof SymbolView>['name'];color
 export default function Layout(){return <Tabs screenOptions={{headerShown:false,tabBarActiveTintColor:'#111214',tabBarInactiveTintColor:'#8E8E93',tabBarStyle:style as never,tabBarItemStyle:{borderRadius:28},tabBarLabelStyle:{fontSize:10.5,lineHeight:13,fontWeight:'600',marginTop:1}}}>
 <Tabs.Screen name="index" options={{title:'Главная',tabBarIcon:({focused,color})=><Icon color={color} name={{ios:focused?'house.fill':'house',android:'home',web:'home'}}/>}}/>
 <Tabs.Screen name="catalog" options={{title:'Автомобили',tabBarIcon:({focused,color})=><Icon color={color} name={{ios:focused?'car.fill':'car',android:'directions_car',web:'directions_car'}}/>}}/>
-<Tabs.Screen name="saved" options={{title:'Избранное',tabBarIcon:({focused,color})=><Icon color={color} name={{ios:focused?'heart.fill':'heart',android:'favorite',web:'favorite'}}/>}}/>
+<Tabs.Screen name="saved" options={{title:'Визит',tabBarIcon:({color})=><Icon color={color} name={{ios:'calendar',android:'event_available',web:'event_available'}}/>}}/>
 <Tabs.Screen name="profile" options={{title:'Настройки',tabBarIcon:({focused,color})=><Icon color={color} name={{ios:focused?'gearshape.fill':'gearshape',android:'settings',web:'settings'}}/>}}/>
 <Tabs.Screen name="more" options={{href:null}}/><Tabs.Screen name="page" options={{href:null}}/></Tabs>}

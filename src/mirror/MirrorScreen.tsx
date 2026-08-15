@@ -3,8 +3,11 @@ import SiteMirror from '@/src/mirror/SiteMirror';
 import { useApp } from '@/src/state/AppProvider';
 
 function withAppMode(path: string, language: string, theme: string) {
-  const separator = path.includes('?') ? '&' : '?';
-  return `${path}${separator}asu_app=1&asu_lang=${encodeURIComponent(language)}&asu_theme=${encodeURIComponent(theme)}`;
+  const hashIndex = path.indexOf('#');
+  const basePath = hashIndex >= 0 ? path.slice(0, hashIndex) : path;
+  const hash = hashIndex >= 0 ? path.slice(hashIndex) : '';
+  const separator = basePath.includes('?') ? '&' : '?';
+  return `${basePath}${separator}asu_app=1&asu_lang=${encodeURIComponent(language)}&asu_theme=${encodeURIComponent(theme)}${hash}`;
 }
 
 export default function MirrorScreen({ path }: { path: string }) {
