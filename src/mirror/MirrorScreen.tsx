@@ -1,12 +1,21 @@
 import { StyleSheet, View } from 'react-native';
 import SiteMirror from '@/src/mirror/SiteMirror';
+import { useApp } from '@/src/state/AppProvider';
+
+function withAppMode(path: string, language: string, theme: string) {
+  const separator = path.includes('?') ? '&' : '?';
+  return `${path}${separator}asu_app=1&asu_lang=${encodeURIComponent(language)}&asu_theme=${encodeURIComponent(theme)}`;
+}
 
 export default function MirrorScreen({ path }: { path: string }) {
+  const { language, themeMode } = useApp();
+  const appPath = withAppMode(path, language, themeMode);
+
   return (
     <View style={styles.page}>
       <SiteMirror
-        key={path}
-        path={path}
+        key={appPath}
+        path={appPath}
         dom={{
           style: styles.dom,
           containerStyle: styles.dom,

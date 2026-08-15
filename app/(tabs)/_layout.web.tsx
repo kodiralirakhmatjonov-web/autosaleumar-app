@@ -7,5 +7,5 @@ export default function Layout(){return <Tabs screenOptions={{headerShown:false,
 <Tabs.Screen name="index" options={{title:'Главная',tabBarIcon:({focused,color})=><Icon color={color} name={{ios:focused?'house.fill':'house',android:'home',web:'home'}}/>}}/>
 <Tabs.Screen name="catalog" options={{title:'Автомобили',tabBarIcon:({focused,color})=><Icon color={color} name={{ios:focused?'car.fill':'car',android:'directions_car',web:'directions_car'}}/>}}/>
 <Tabs.Screen name="saved" options={{title:'Избранное',tabBarIcon:({focused,color})=><Icon color={color} name={{ios:focused?'heart.fill':'heart',android:'favorite',web:'favorite'}}/>}}/>
-<Tabs.Screen name="profile" options={{title:'Профиль',tabBarIcon:({focused,color})=><Icon color={color} name={{ios:focused?'person.crop.circle.fill':'person.crop.circle',android:'account_circle',web:'account_circle'}}/>}}/>
+<Tabs.Screen name="profile" options={{title:'Настройки',tabBarIcon:({focused,color})=><Icon color={color} name={{ios:focused?'gearshape.fill':'gearshape',android:'settings',web:'settings'}}/>}}/>
 <Tabs.Screen name="more" options={{href:null}}/><Tabs.Screen name="page" options={{href:null}}/></Tabs>}

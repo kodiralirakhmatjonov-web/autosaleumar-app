@@ -5,5 +5,5 @@ export default function TabLayout(){return <NativeTabs blurEffect="systemDefault
  <NativeTabs.Trigger name="index"><NativeTabs.Trigger.Icon sf={{default:'house',selected:'house.fill'}} md="home"/><NativeTabs.Trigger.Label>Главная</NativeTabs.Trigger.Label></NativeTabs.Trigger>
  <NativeTabs.Trigger name="catalog"><NativeTabs.Trigger.Icon sf={{default:'car',selected:'car.fill'}} md="directions_car"/><NativeTabs.Trigger.Label>Автомобили</NativeTabs.Trigger.Label></NativeTabs.Trigger>
  <NativeTabs.Trigger name="saved"><NativeTabs.Trigger.Icon sf={{default:'heart',selected:'heart.fill'}} md="favorite"/><NativeTabs.Trigger.Label>Избранное</NativeTabs.Trigger.Label></NativeTabs.Trigger>
- <NativeTabs.Trigger name="profile"><NativeTabs.Trigger.Icon sf={{default:'person.crop.circle',selected:'person.crop.circle.fill'}} md="account_circle"/><NativeTabs.Trigger.Label>Профиль</NativeTabs.Trigger.Label></NativeTabs.Trigger>
+ <NativeTabs.Trigger name="profile"><NativeTabs.Trigger.Icon sf={{default:'gearshape',selected:'gearshape.fill'}} md="settings"/><NativeTabs.Trigger.Label>Настройки</NativeTabs.Trigger.Label></NativeTabs.Trigger>
  </NativeTabs>}
