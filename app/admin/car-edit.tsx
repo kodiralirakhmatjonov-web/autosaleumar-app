@@ -1,19 +1,8 @@
-import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, useColorScheme } from 'react-native';
-import { AdminShell } from '@/src/components/AdminShell';
-import { CarFormFields, emptyCarDraft } from '@/app/admin/car-new';
-import { getAdminCarDetail, updateAdminCar } from '@/src/lib/api';
-import type { CarDraft } from '@/src/lib/types';
-import { useApp } from '@/src/state/AppProvider';
-import { colors } from '@/src/theme/colors';
-
-function str(value: unknown){return value == null ? '' : String(value)}
-function fromDetail(car:any):CarDraft{const v=car?.variants?.[0]??{};return {
-  ...emptyCarDraft,
-  brand:car.brand??emptyCarDraft.brand,model:car.model??'',year:str(car.year),trim:car.trim??'',status:car.status??'in_stock',countryCode:car.countryCode??'',arrivalDate:car.arrivalDate??'',
-  price:str(car.price),currency:car.currency??'USD',priceOnRequest:!!car.priceOnRequest,isPublic:!!car.isPublic,isFeatured:!!car.isFeatured,mileageKm:str(car.mileageKm),engineText:car.engineText??'',engineDisplacementL:str(car.engineDisplacementL),fuelType:car.fuelType??'',driveType:car.driveType??'',transmission:car.transmission??'automatic',seats:str(car.seats),horsepowerHp:str(car.horsepowerHp),torqueNm:str(car.torqueNm),acceleration0100:str(car.acceleration0100),topSpeedKmh:str(car.topSpeedKmh),fuelConsumptionL100:str(car.fuelConsumptionL100),electricRangeKm:str(car.electricRangeKm),instagramUrl:car.instagramUrl??'',shortDescriptionRu:car.shortDescriptionRu??'',shortDescriptionUz:car.shortDescriptionUz??'',descriptionRu:car.descriptionRu??'',descriptionUz:car.descriptionUz??'',exteriorColorName:v.exteriorColorName??'',exteriorSwatch:v.exteriorSwatch??'#111214',interiorColorName:v.interiorColorName??'',interiorSwatch:v.interiorSwatch??'#111214',vin:v.vin??'',stockNumber:v.stockNumber??'',quantity:str(v.quantity??1),variantId:v.id??null,
-}}
-
-export default function CarEdit(){const p=colors[useColorScheme()==='dark'?'dark':'light'];const {id}=useLocalSearchParams<{id:string}>();const carId=Number(id);const {token}=useApp();const [d,setD]=useState<CarDraft|null>(null);const [busy,setBusy]=useState(false);const load=useCallback(async()=>{if(!token||!Number.isSafeInteger(carId))return;try{setD(fromDetail(await getAdminCarDetail(token,carId)))}catch(e){Alert.alert('Ошибка',e instanceof Error?e.message:'Не удалось загрузить автомобиль')}},[carId,token]);useEffect(()=>{void load()},[load]);const save=async()=>{if(!token||!d)return;setBusy(true);try{await updateAdminCar(token,carId,d);Alert.alert('Сохранено','Изменения записаны в общую D1 базу.',[{text:'Готово',onPress:()=>router.back()}])}catch(e){Alert.alert('Не удалось сохранить',e instanceof Error?e.message:'Ошибка')}finally{setBusy(false)}};return <AdminShell title="Редактировать автомобиль" subtitle="Данные синхронны с веб Control System.">{!d?<ActivityIndicator color={p.text} style={{marginTop:50}}/>:<><CarFormFields draft={d} onChange={(k,v)=>setD(x=>x?({...x,[k]:v}):x)}/><Pressable disabled={busy} onPress={()=>void save()} style={[s.button,{backgroundColor:p.text},busy&&{opacity:.6}]}><Text style={[s.buttonText,{color:p.background}]}>{busy?'Сохраняем…':'Сохранить изменения'}</Text></Pressable><Pressable onPress={()=>router.push({pathname:'/admin/car-media',params:{id:String(carId)}})} style={[s.media,{borderColor:p.hairline}]}><Text style={[s.mediaText,{color:p.text}]}>Фотографии автомобиля</Text></Pressable></>}</AdminShell>}
-const s=StyleSheet.create({button:{height:56,borderRadius:28,marginTop:30,alignItems:'center',justifyContent:'center'},buttonText:{fontSize:14,lineHeight:18,fontWeight:'600'},media:{height:54,borderRadius:27,borderWidth:StyleSheet.hairlineWidth,marginTop:10,alignItems:'center',justifyContent:'center'},mediaText:{fontSize:14,lineHeight:18,fontWeight:'600'}});
+import { useLocalSearchParams } from 'expo-router';
+import MirrorScreen from '@/src/mirror/MirrorScreen';
+export default function AdminCarEditRoute() {
+  const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const raw = Array.isArray(params.id) ? params.id[0] : params.id;
+  const id = raw ? encodeURIComponent(raw) : '';
+  return <MirrorScreen path={`/admin/cars/edit/?id=${id}`} />;
+}

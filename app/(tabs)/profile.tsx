@@ -1,1 +1,2 @@
-import ProfileScreen from '@/src/screens/ProfileScreen'; export default ProfileScreen;
+import MirrorProfileScreen from '@/src/screens/MirrorProfileScreen';
+export default MirrorProfileScreen;
