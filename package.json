@@ -12,6 +12,7 @@
     "update:development": "eas update --channel development --environment development --message \"development update\" --non-interactive"
   },
   "dependencies": {
+    "@expo/metro-runtime": "55.0.12",
     "expo": "~55.0.26",
     "expo-dev-client": "~55.0.35",
     "expo-glass-effect": "~55.0.11",
@@ -24,9 +25,9 @@
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-native": "0.83.6",
-    "react-native-web": "~0.21.0",
     "react-native-safe-area-context": "~5.6.2",
-    "react-native-screens": "~4.23.0"
+    "react-native-screens": "~4.23.0",
+    "react-native-web": "~0.21.0"
   },
   "devDependencies": {
     "@types/react": "~19.2.0",
