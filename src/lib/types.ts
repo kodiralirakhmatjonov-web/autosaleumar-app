@@ -22,6 +22,7 @@ export interface CatalogVariant {
   interiorSwatch: string;
   photos: CatalogPhoto[];
   interiorPhotos?: CatalogPhoto[];
+  detailPhotos?: CatalogPhoto[];
 }
 
 export interface CatalogCar {
@@ -37,10 +38,31 @@ export interface CatalogCar {
   price: number | null;
   currency: 'USD' | 'UZS' | 'EUR';
   priceOnRequest: boolean;
+  mileageKm?: number | null;
+  fuelType?: string | null;
+  driveType?: string | null;
+  transmission?: string | null;
   engineText: string | null;
+  seats?: number | null;
+  exteriorColor?: string | null;
+  interiorColor?: string | null;
   shortDescriptionRu: string;
   shortDescriptionUz: string;
+  descriptionRu?: string;
+  descriptionUz?: string;
+  isNew?: boolean;
+  isNewArrival?: boolean;
+  isFeatured?: boolean;
+  updatedAt?: string;
   coverUrl: string | null;
+  engineDisplacementL?: number | null;
+  horsepowerHp?: number | null;
+  torqueNm?: number | null;
+  acceleration0100?: number | null;
+  topSpeedKmh?: number | null;
+  fuelConsumptionL100?: number | null;
+  electricRangeKm?: number | null;
+  instagramUrl?: string | null;
   variants?: CatalogVariant[];
 }
 

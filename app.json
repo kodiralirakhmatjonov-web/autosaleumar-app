@@ -36,6 +36,9 @@
         "projectId": "51511af7-f45e-4395-92aa-bf90ced182ea"
       }
     },
-    "owner": "kodiralirakhmatjonov"
+    "owner": "kodiralirakhmatjonov",
+    "web": {
+      "output": "server"
+    }
   }
 }
