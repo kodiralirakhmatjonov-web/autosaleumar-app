@@ -1,18 +1,26 @@
 name: Deploy app browser preview
 
-on:
+"on":
   workflow_dispatch:
+
+  workflow_run:
+    workflows:
+      - Apply mobile-update.zip
+    types:
+      - completed
+
   push:
     branches:
       - main
     paths:
-      - "app/**"
-      - "src/**"
-      - "assets/**"
-      - "app.json"
-      - "package.json"
-      - "package-lock.json"
-      - "expo-env.d.ts"
+      - app/**
+      - src/**
+      - assets/**
+      - app.json
+      - package.json
+      - package-lock.json
+      - expo-env.d.ts
+      - .github/workflows/deploy-web-preview.yml
 
 permissions:
   contents: read
@@ -23,13 +31,21 @@ concurrency:
 
 jobs:
   deploy-preview:
+    if: >-
+      ${{
+        github.event_name != 'workflow_run' ||
+        github.event.workflow_run.conclusion == 'success'
+      }}
     runs-on: ubuntu-latest
+
     env:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
     steps:
-      - name: Checkout repository
+      - name: Checkout latest main
         uses: actions/checkout@v6
+        with:
+          ref: main
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -49,9 +65,22 @@ jobs:
         run: npx expo export --platform web
 
       - name: Deploy browser preview
+        shell: bash
         run: |
+          set -o pipefail
+
           npx eas-cli@latest deploy \
             --alias dev \
             --dev-domain autosaleumar-mobile-kodirali \
             --environment development \
-            --non-interactive
+            --non-interactive 2>&1 | tee eas-deploy-output.txt
+
+          PREVIEW_URL="$(grep -Eo 'https://[A-Za-z0-9.-]+\.expo\.app' eas-deploy-output.txt | tail -n 1 || true)"
+
+          if [ -n "$PREVIEW_URL" ]; then
+            {
+              echo "## AutoSale Umar browser preview"
+              echo
+              echo "$PREVIEW_URL"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
