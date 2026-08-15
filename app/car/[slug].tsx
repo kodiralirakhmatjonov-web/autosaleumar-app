@@ -1,345 +1,52 @@
 import { Image } from 'expo-image';
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Linking,
-  Platform,
-  Pressable,
-  ScrollView,
-  Share,
-  StyleSheet,
-  Text,
-  View,
-  useColorScheme,
-  useWindowDimensions,
-} from 'react-native';
-import { AdaptiveGlass } from '@/src/components/AdaptiveGlass';
-import { absoluteMediaUrl, getCar } from '@/src/lib/api';
-import { formatPrice, statusLabel } from '@/src/lib/format';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Linking, Pressable, ScrollView, Share, StyleSheet, Text, View, useColorScheme, useWindowDimensions } from 'react-native';
+import { SectionHeading } from '@/src/components/SectionHeading';
+import { SiteGlass } from '@/src/components/SiteGlass';
+import { SiteHeader } from '@/src/components/SiteHeader';
+import { StatusPill } from '@/src/components/StatusPill';
+import { absoluteMediaUrl, getBrandMedia, getCar } from '@/src/lib/api';
+import { allDetailPhotos, allExteriorPhotos, allInteriorPhotos, formatPrice } from '@/src/lib/format';
 import type { CatalogCar } from '@/src/lib/types';
+import { useApp } from '@/src/state/AppProvider';
+import { siteAssets } from '@/src/site/assets';
 import { colors } from '@/src/theme/colors';
 
-function uniquePhotos(car: CatalogCar): string[] {
-  const values: Array<string | null | undefined> = [car.coverUrl];
-  car.variants?.forEach((variant) => {
-    variant.photos?.forEach((photo) => values.push(photo.url));
-    variant.interiorPhotos?.forEach((photo) => values.push(photo.url));
-    variant.detailPhotos?.forEach((photo) => values.push(photo.url));
-  });
+function Spec({label,value,icon}:{label:string;value:string;icon:string}){const p=colors[useColorScheme()==='dark'?'dark':'light'];return <View style={[s.spec,{backgroundColor:p.surface,borderColor:p.hairline}]}><View style={[s.specIcon,{backgroundColor:p.fill}]}><SymbolView name={{ios:icon as any,android:'info',web:'info'} as any} size={18} tintColor={p.text}/></View><Text numberOfLines={2} style={[s.specValue,{color:p.text}]}>{value}</Text><Text style={[s.specLabel,{color:p.secondary}]}>{label}</Text></View>}
+function PhotoRail({urls,height=310}:{urls:string[];height?:number}){const {width}=useWindowDimensions();const w=Math.min(width-32,728);if(!urls.length)return null;return <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} contentContainerStyle={s.photoRail}>{urls.map((url,i)=><Image key={`${url}-${i}`} source={{uri:absoluteMediaUrl(url)!}} style={{width:w,height,borderRadius:34}} contentFit="cover" transition={180}/>)}</ScrollView>}
 
-  return Array.from(new Set(values.map(absoluteMediaUrl).filter((value): value is string => Boolean(value)))).slice(0, 14);
+export default function CarDetail(){
+ const {slug}=useLocalSearchParams<{slug:string}>();const p=colors[useColorScheme()==='dark'?'dark':'light'];const {language,isFavorite,toggleFavorite}=useApp();const [car,setCar]=useState<CatalogCar|null>(null);const [covers,setCovers]=useState<string[]>([]);const [loading,setLoading]=useState(true);
+ const load=useCallback(async()=>{if(!slug)return;setLoading(true);try{const c=await getCar(slug);setCar(c);try{setCovers((await getBrandMedia(c.brand)).map(x=>x.url))}catch{setCovers([])}}finally{setLoading(false)}},[slug]);useEffect(()=>{void load()},[load]);
+ const exterior=useMemo(()=>car?allExteriorPhotos(car):[],[car]);const interior=useMemo(()=>car?allInteriorPhotos(car):[],[car]);const details=useMemo(()=>car?allDetailPhotos(car):[],[car]);
+ if(loading)return <View style={[s.center,{backgroundColor:p.background}]}><ActivityIndicator color={p.text}/></View>;if(!car)return <View style={[s.center,{backgroundColor:p.background}]}><Text style={{color:p.text}}>Автомобиль не найден</Text></View>;
+ const favorite=isFavorite(car.slug);const logo=siteAssets.brands[car.brand];const share=async()=>{try{await Share.share({message:`${car.brand} ${car.model} — ${formatPrice(car,language)}\nhttps://autosaleumar.com/car/?slug=${encodeURIComponent(car.slug)}`})}catch{}};
+ const book=()=>router.push({pathname:'/booking',params:{carId:String(car.id),brand:car.brand,carLabel:`${car.brand} ${car.model}`}});
+ const request=()=>router.push({pathname:'/request-car',params:{brand:car.brand,model:car.model,trim:car.trim??''}});
+ const heroCover=covers[0]?absoluteMediaUrl(covers[0]):null;
+ const specs=[
+  car.engineText?['Двигатель',car.engineText,'engine.combustion']:null,
+  car.transmission?['Коробка',car.transmission,'gearshape.fill']:null,
+  car.driveType?['Привод',car.driveType,'4wd']:null,
+  car.mileageKm!=null?['Пробег',`${car.mileageKm.toLocaleString()} км`,'gauge.open.with.lines.needle.33percent']:null,
+  car.seats?['Мест',String(car.seats),'person.2.fill']:null,
+  car.countryCode?['Поставка',car.countryCode,'shippingbox.fill']:null,
+ ].filter(Boolean) as string[][];
+ return <View style={[s.page,{backgroundColor:p.background}]}><ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}><View style={s.shell}><SiteHeader back/>
+ {heroCover?<View style={s.brandCover}><Image source={{uri:heroCover}} style={StyleSheet.absoluteFill} contentFit="cover"/><View style={s.brandCoverShade}/><View style={s.brandCoverCopy}>{logo?<View style={s.brandMedallion}><Image source={logo} style={s.brandLogo} contentFit="contain"/></View>:null}<Text style={s.brandCoverText}>{car.brand.toUpperCase()}</Text></View></View>:null}
+ <View style={s.identity}><View style={s.identityTop}><Text style={[s.eyebrow,{color:p.secondary}]}>{car.brand.toUpperCase()}</Text><StatusPill status={car.status} language={language}/></View><Text style={[s.title,{color:p.text}]}>{car.model}</Text>{car.trim?<Text style={[s.trim,{color:p.secondary}]}>{car.trim}</Text>:null}<View style={s.priceLine}><Text style={[s.price,{color:p.text}]}>{formatPrice(car,language)}</Text>{car.year?<Text style={[s.year,{color:p.secondary}]}>{car.year}</Text>:null}</View>
+ <View style={s.actions}><Pressable onPress={book} style={[s.book,{backgroundColor:p.text}]}><Text style={[s.bookText,{color:p.background}]}>Забронировать</Text></Pressable><Pressable onPress={()=>toggleFavorite(car.slug)}><SiteGlass interactive style={s.circle}><SymbolView name={{ios:favorite?'heart.fill':'heart',android:favorite?'favorite':'favorite_border',web:favorite?'favorite':'favorite_border'}} size={20} tintColor={favorite?'#FF375F':p.text}/></SiteGlass></Pressable><Pressable onPress={()=>void share()}><SiteGlass interactive style={s.circle}><SymbolView name={{ios:'square.and.arrow.up',android:'share',web:'share'}} size={19} tintColor={p.text}/></SiteGlass></Pressable></View></View>
+ </View>
+ {exterior.length?<View style={s.section}><SectionHeading kicker="EXTERIOR" title="Экстерьер"/><PhotoRail urls={exterior}/></View>:null}
+ <View style={s.section}><SectionHeading kicker="SPECIFICATIONS" title="Характеристики"/><View style={s.specGrid}>{specs.map(x=><Spec key={x[0]} label={x[0]} value={x[1]} icon={x[2]}/>)}</View></View>
+ {(car.descriptionRu||car.shortDescriptionRu)?<View style={s.section}><SectionHeading kicker="DETAILS" title="Об автомобиле"/><Text style={[s.description,{color:p.secondary}]}>{language==='ru'?(car.descriptionRu||car.shortDescriptionRu):(car.descriptionUz||car.shortDescriptionUz)}</Text>{details[0]?<Image source={{uri:absoluteMediaUrl(details[0])!}} style={s.editorialImage} contentFit="cover"/>:null}</View>:null}
+ {(car.horsepowerHp||car.acceleration0100||car.topSpeedKmh)?<View style={s.section}><View style={s.performance}><Text style={s.performanceKicker}>PERFORMANCE</Text><Text style={s.performanceTitle}>Характер в цифрах.</Text><View style={s.performanceGrid}>{car.horsepowerHp?<View><Text style={s.performanceValue}>{car.horsepowerHp}</Text><Text style={s.performanceUnit}>л.с.</Text></View>:null}{car.acceleration0100?<View><Text style={s.performanceValue}>{car.acceleration0100}</Text><Text style={s.performanceUnit}>0–100 сек</Text></View>:null}{car.topSpeedKmh?<View><Text style={s.performanceValue}>{car.topSpeedKmh}</Text><Text style={s.performanceUnit}>км/ч</Text></View>:null}</View></View></View>:null}
+ {interior.length?<View style={s.section}><SectionHeading kicker="INTERIOR" title="Интерьер"/><PhotoRail urls={interior}/></View>:null}
+ {car.variants?.length?<View style={s.section}><SectionHeading kicker="CONFIGURATION" title="Цветовые варианты"/><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.variantRail}>{car.variants.map(v=><SiteGlass key={v.id} style={s.variant}><View style={[s.swatch,{backgroundColor:v.exteriorSwatch||'#111214',borderColor:p.hairline}]}/><View style={s.variantCopy}><Text numberOfLines={1} style={[s.variantTitle,{color:p.text}]}>{v.exteriorColorName||'Экстерьер'}</Text><Text numberOfLines={1} style={[s.variantText,{color:p.secondary}]}>{v.interiorColorName||'Интерьер'}</Text></View></SiteGlass>)}</ScrollView></View>:null}
+ {car.instagramUrl?<View style={s.section}><Pressable onPress={()=>void Linking.openURL(car.instagramUrl!)} style={[s.review,{backgroundColor:p.surface,borderColor:p.hairline}]}><View style={[s.reviewIcon,{backgroundColor:p.fill}]}><SymbolView name={{ios:'play.rectangle.fill',android:'smart_display',web:'smart_display'}} size={20} tintColor={p.text}/></View><View style={{flex:1}}><Text style={[s.reviewTitle,{color:p.text}]}>Видео-обзор</Text><Text style={[s.reviewText,{color:p.secondary}]}>Открыть Instagram Auto Sale Umar</Text></View><SymbolView name={{ios:'arrow.up.right',android:'north_east',web:'north_east'}} size={15} tintColor={p.secondary}/></Pressable></View>:null}
+ <View style={s.section}><View style={[s.finalCard,{backgroundColor:'#111214'}]}><Text style={s.finalKicker}>AUTO SALE UMAR</Text><Text style={s.finalTitle}>Этот автомобиль может быть вашим.</Text><Text style={s.finalText}>Оставьте запрос или забронируйте персональный просмотр в шоуруме.</Text><View style={s.finalActions}><Pressable onPress={book} style={s.finalWhite}><Text style={s.finalWhiteText}>Визит</Text></Pressable><Pressable onPress={request} style={s.finalDark}><Text style={s.finalDarkText}>Запросить</Text></Pressable></View></View></View>
+ </ScrollView></View>
 }
-
-function SpecTile({ label, value, symbol }: { label: string; value: string; symbol: 'calendar' | 'bolt.fill' | 'arrow.triangle.2.circlepath' | 'road.lanes' | 'gearshape.2.fill' | 'gearshape.fill' }) {
-  const palette = colors[useColorScheme() === 'dark' ? 'dark' : 'light'];
-  const android = symbol === 'calendar' ? 'calendar_month' : symbol === 'arrow.triangle.2.circlepath' ? 'settings' : symbol === 'road.lanes' ? 'route' : symbol === 'gearshape.2.fill' ? 'speed' : symbol === 'gearshape.fill' ? 'settings' : 'speed';
-  return (
-    <View style={[styles.specTile, { backgroundColor: palette.surface, borderColor: palette.hairline }]}>
-      <View style={[styles.specIcon, { backgroundColor: palette.fill }]}>
-        <SymbolView name={{ ios: symbol, android, web: android }} size={17} tintColor={palette.text} weight="semibold" />
-      </View>
-      <Text style={[styles.specValue, { color: palette.text }]} numberOfLines={2}>{value}</Text>
-      <Text style={[styles.specLabel, { color: palette.secondary }]}>{label}</Text>
-    </View>
-  );
-}
-
-export default function CarScreen() {
-  const { slug } = useLocalSearchParams<{ slug: string }>();
-  const dark = useColorScheme() === 'dark';
-  const palette = colors[dark ? 'dark' : 'light'];
-  const { width } = useWindowDimensions();
-  const [car, setCar] = useState<CatalogCar | null>(null);
-  const [error, setError] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [galleryIndex, setGalleryIndex] = useState(0);
-
-  useEffect(() => {
-    if (!slug) return;
-    getCar(slug).then(setCar).catch(() => setError(true));
-  }, [slug]);
-
-  const photos = useMemo(() => car ? uniquePhotos(car) : [], [car]);
-  const galleryWidth = Math.max(280, Math.min(width, 720) - 24);
-
-  const shareCar = async () => {
-    if (!car) return;
-    await Share.share({ message: `${car.brand} ${car.model} — ${formatPrice(car)} · Auto Sale Umar` });
-  };
-
-  const requestCar = () => {
-    if (!car) return;
-    void Linking.openURL(`https://autosaleumar.com/request-car/?car=${encodeURIComponent(car.slug)}`);
-  };
-
-  if (!car && !error) {
-    return <View style={[styles.center, { backgroundColor: palette.background }]}><ActivityIndicator /></View>;
-  }
-
-  if (!car) {
-    return <View style={[styles.center, { backgroundColor: palette.background }]}><Text style={{ color: palette.text }}>Автомобиль не найден.</Text></View>;
-  }
-
-  const specTiles = [
-    car.year ? { label: 'Год', value: String(car.year), symbol: 'calendar' as const } : null,
-    car.horsepowerHp ? { label: 'Мощность', value: `${car.horsepowerHp} л.с.`, symbol: 'bolt.fill' as const } : null,
-    car.driveType ? { label: 'Привод', value: car.driveType, symbol: 'arrow.triangle.2.circlepath' as const } : null,
-    car.mileageKm != null ? { label: 'Пробег', value: `${new Intl.NumberFormat('ru-RU').format(car.mileageKm)} км`, symbol: 'road.lanes' as const } : null,
-    car.engineText ? { label: 'Двигатель', value: car.engineText, symbol: 'gearshape.2.fill' as const } : null,
-    car.transmission ? { label: 'Коробка', value: car.transmission, symbol: 'gearshape.fill' as const } : null,
-  ].filter((item): item is NonNullable<typeof item> => Boolean(item));
-
-  const performance = [
-    car.horsepowerHp ? { value: String(car.horsepowerHp), unit: 'л.с.', label: 'мощность' } : null,
-    car.acceleration0100 ? { value: String(car.acceleration0100), unit: 'с', label: '0–100 км/ч' } : null,
-    car.topSpeedKmh ? { value: String(car.topSpeedKmh), unit: 'км/ч', label: 'макс. скорость' } : null,
-  ].filter((item): item is NonNullable<typeof item> => Boolean(item));
-
-  return (
-    <>
-      <Stack.Screen options={{ headerTitle: '' }} />
-
-      {process.env.EXPO_OS === 'ios' ? (
-        <>
-          <Stack.Toolbar placement="right">
-            <Stack.Toolbar.Button icon={saved ? 'heart.fill' : 'heart'} onPress={() => setSaved((value) => !value)} />
-            <Stack.Toolbar.Button icon="square.and.arrow.up" onPress={() => void shareCar()} />
-          </Stack.Toolbar>
-          <Stack.Toolbar>
-            <Stack.Toolbar.Spacer />
-            <Stack.Toolbar.Button icon="paperplane.fill" onPress={requestCar}>Запросить</Stack.Toolbar.Button>
-            <Stack.Toolbar.Spacer />
-          </Stack.Toolbar>
-        </>
-      ) : null}
-
-      <ScrollView
-        style={{ backgroundColor: palette.background }}
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={styles.content}
-      >
-        <View style={styles.shell}>
-          <View style={[styles.gallery, { width: galleryWidth, backgroundColor: palette.surface, borderColor: palette.hairline }]}>
-            <ScrollView
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              onMomentumScrollEnd={(event) => setGalleryIndex(Math.round(event.nativeEvent.contentOffset.x / galleryWidth))}
-            >
-              {(photos.length ? photos : [null]).map((photo, index) => (
-                <View key={photo ?? `empty-${index}`} style={{ width: galleryWidth, height: '100%' }}>
-                  {photo ? <Image source={photo} contentFit="contain" transition={180} style={StyleSheet.absoluteFill} /> : null}
-                </View>
-              ))}
-            </ScrollView>
-
-            {Platform.OS === 'web' ? (
-              <View style={styles.webToolbar}>
-                <AdaptiveGlass interactive style={styles.webToolButton}>
-                  <Pressable onPress={() => router.back()} style={styles.webToolPressable}>
-                    <SymbolView name={{ ios: 'chevron.left', android: 'arrow_back_ios_new', web: 'arrow_back_ios_new' }} size={16} tintColor={palette.text} weight="semibold" />
-                  </Pressable>
-                </AdaptiveGlass>
-                <View style={styles.webToolbarRight}>
-                  <AdaptiveGlass interactive style={styles.webToolButton}>
-                    <Pressable onPress={() => setSaved((value) => !value)} style={styles.webToolPressable}>
-                      <SymbolView name={{ ios: saved ? 'heart.fill' : 'heart', android: 'favorite', web: 'favorite' }} size={17} tintColor={palette.text} />
-                    </Pressable>
-                  </AdaptiveGlass>
-                  <AdaptiveGlass interactive style={styles.webToolButton}>
-                    <Pressable onPress={() => void shareCar()} style={styles.webToolPressable}>
-                      <SymbolView name={{ ios: 'square.and.arrow.up', android: 'ios_share', web: 'ios_share' }} size={17} tintColor={palette.text} />
-                    </Pressable>
-                  </AdaptiveGlass>
-                </View>
-              </View>
-            ) : null}
-
-            <AdaptiveGlass style={styles.galleryStatus}>
-              <View style={styles.galleryStatusInner}>
-                <View style={[styles.statusDot, { backgroundColor: car.status === 'in_transit' ? '#FF9F0A' : '#30D158' }]} />
-                <Text style={[styles.galleryStatusText, { color: palette.text }]}>{statusLabel(car.status)}</Text>
-              </View>
-            </AdaptiveGlass>
-
-            {photos.length > 1 ? (
-              <AdaptiveGlass dark style={styles.galleryCounter}>
-                <Text style={styles.galleryCounterText}>{galleryIndex + 1} / {photos.length}</Text>
-              </AdaptiveGlass>
-            ) : null}
-          </View>
-
-          {photos.length > 1 ? (
-            <View style={styles.dots}>
-              {photos.slice(0, 8).map((photo, index) => (
-                <View key={photo} style={[styles.dot, { backgroundColor: index === galleryIndex ? palette.text : palette.hairline }]} />
-              ))}
-            </View>
-          ) : null}
-
-          <View style={styles.identity}>
-            <View style={styles.identityEyebrowRow}>
-              <Text style={[styles.brand, { color: palette.secondary }]}>{car.brand.toUpperCase()}</Text>
-              {car.isNewArrival ? <Text style={[styles.newArrival, { color: palette.accent }]}>НОВОЕ ПОСТУПЛЕНИЕ</Text> : null}
-            </View>
-            <Text style={[styles.title, { color: palette.text }]}>{car.model}</Text>
-            {car.trim ? <Text style={[styles.trim, { color: palette.secondary }]}>{car.trim}</Text> : null}
-            <View style={styles.priceRow}>
-              <Text style={[styles.price, { color: palette.text }]}>{formatPrice(car)}</Text>
-              {car.year ? <Text style={[styles.year, { color: palette.secondary }]}>{car.year}</Text> : null}
-            </View>
-          </View>
-
-          {specTiles.length ? (
-            <View style={styles.section}>
-              <Text style={[styles.sectionKicker, { color: palette.secondary }]}>OVERVIEW</Text>
-              <Text style={[styles.sectionTitle, { color: palette.text }]}>Главное</Text>
-              <View style={styles.specGrid}>
-                {specTiles.slice(0, 6).map((spec) => <SpecTile key={spec.label} {...spec} />)}
-              </View>
-            </View>
-          ) : null}
-
-          {performance.length >= 2 ? (
-            <View style={styles.section}>
-              <View style={styles.performanceCard}>
-                <Text style={styles.performanceKicker}>PERFORMANCE</Text>
-                <Text style={styles.performanceTitle}>Характер в цифрах.</Text>
-                <View style={styles.performanceGrid}>
-                  {performance.map((item) => (
-                    <View key={item.label} style={styles.performanceItem}>
-                      <View style={styles.performanceValueRow}>
-                        <Text style={styles.performanceValue}>{item.value}</Text>
-                        <Text style={styles.performanceUnit}>{item.unit}</Text>
-                      </View>
-                      <Text style={styles.performanceLabel}>{item.label}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            </View>
-          ) : null}
-
-          {car.variants?.length ? (
-            <View style={styles.section}>
-              <Text style={[styles.sectionKicker, { color: palette.secondary }]}>CONFIGURATION</Text>
-              <Text style={[styles.sectionTitle, { color: palette.text }]}>Варианты</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.variantRail}>
-                {car.variants.map((variant) => (
-                  <AdaptiveGlass key={variant.id} style={styles.variantCard}>
-                    <View style={[styles.swatch, { backgroundColor: variant.exteriorSwatch || '#D1D1D6', borderColor: palette.hairline }]} />
-                    <View style={styles.variantCopy}>
-                      <Text numberOfLines={1} style={[styles.variantName, { color: palette.text }]}>{variant.exteriorColorName || 'Экстерьер'}</Text>
-                      <Text numberOfLines={1} style={[styles.variantInterior, { color: palette.secondary }]}>{variant.interiorColorName || 'Интерьер'}</Text>
-                    </View>
-                  </AdaptiveGlass>
-                ))}
-              </ScrollView>
-            </View>
-          ) : null}
-
-          <View style={styles.section}>
-            <Text style={[styles.sectionKicker, { color: palette.secondary }]}>DETAILS</Text>
-            <Text style={[styles.sectionTitle, { color: palette.text }]}>Об автомобиле</Text>
-            <Text style={[styles.description, { color: palette.secondary }]}>{car.descriptionRu || car.shortDescriptionRu || 'Подробная информация об автомобиле будет добавлена.'}</Text>
-          </View>
-
-          {car.instagramUrl ? (
-            <Pressable onPress={() => void Linking.openURL(car.instagramUrl!)} style={({ pressed }) => [styles.instagramCard, { backgroundColor: palette.surface, borderColor: palette.hairline }, pressed && styles.pressed]}>
-              <View style={[styles.instagramIcon, { backgroundColor: palette.fill }]}>
-                <SymbolView name={{ ios: 'play.rectangle.fill', android: 'smart_display', web: 'smart_display' }} size={20} tintColor={palette.text} />
-              </View>
-              <View style={styles.instagramCopy}>
-                <Text style={[styles.instagramTitle, { color: palette.text }]}>Посмотреть обзор</Text>
-                <Text style={[styles.instagramText, { color: palette.secondary }]}>Видео Auto Sale Umar</Text>
-              </View>
-              <SymbolView name={{ ios: 'arrow.up.right', android: 'north_east', web: 'north_east' }} size={15} tintColor={palette.secondary} />
-            </Pressable>
-          ) : null}
-        </View>
-      </ScrollView>
-
-      {Platform.OS !== 'ios' ? (
-        <AdaptiveGlass style={styles.webBottomBar}>
-          <View style={styles.webBottomInner}>
-            <View style={styles.webBottomPriceCopy}>
-              <Text style={[styles.webBottomLabel, { color: palette.secondary }]}>Стоимость</Text>
-              <Text numberOfLines={1} style={[styles.webBottomPrice, { color: palette.text }]}>{formatPrice(car)}</Text>
-            </View>
-            <Pressable onPress={requestCar} style={({ pressed }) => [styles.requestButton, pressed && styles.pressed]}>
-              <Text style={styles.requestButtonText}>Запросить</Text>
-              <SymbolView name={{ ios: 'arrow.right', android: 'arrow_forward', web: 'arrow_forward' }} size={16} tintColor="#FFFFFF" weight="semibold" />
-            </Pressable>
-          </View>
-        </AdaptiveGlass>
-      ) : null}
-    </>
-  );
-}
-
-const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  content: { width: '100%', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 168 },
-  shell: { width: '100%', maxWidth: 720, alignSelf: 'center' },
-  pressed: { opacity: 0.82, transform: [{ scale: 0.992 }] },
-  gallery: { alignSelf: 'center', aspectRatio: 1.16, borderRadius: 36, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
-  webToolbar: { position: 'absolute', top: 14, left: 14, right: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  webToolbarRight: { flexDirection: 'row', gap: 8 },
-  webToolButton: { width: 42, height: 42, borderRadius: 21 },
-  webToolPressable: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  galleryStatus: { position: 'absolute', left: 14, bottom: 14, minHeight: 36, borderRadius: 18, paddingHorizontal: 13, justifyContent: 'center' },
-  galleryStatusInner: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  statusDot: { width: 7, height: 7, borderRadius: 4 },
-  galleryStatusText: { fontSize: 12, lineHeight: 15, fontWeight: '600' },
-  galleryCounter: { position: 'absolute', right: 14, bottom: 14, minHeight: 34, borderRadius: 17, paddingHorizontal: 12, justifyContent: 'center' },
-  galleryCounterText: { color: '#FFFFFF', fontSize: 11, lineHeight: 14, fontWeight: '600' },
-  dots: { minHeight: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
-  dot: { width: 5, height: 5, borderRadius: 3 },
-  identity: { paddingHorizontal: 6, paddingTop: 22 },
-  identityEyebrowRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  brand: { flex: 1, fontSize: 10, lineHeight: 13, fontWeight: '700', letterSpacing: 1.15 },
-  newArrival: { fontSize: 9, lineHeight: 12, fontWeight: '700', letterSpacing: 0.9 },
-  title: { marginTop: 7, fontSize: 39, lineHeight: 42, fontWeight: '700', letterSpacing: -1.55 },
-  trim: { marginTop: 7, fontSize: 16, lineHeight: 22 },
-  priceRow: { marginTop: 19, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 14 },
-  price: { flex: 1, fontSize: 25, lineHeight: 30, fontWeight: '700', letterSpacing: -0.6 },
-  year: { fontSize: 15, lineHeight: 20, fontWeight: '500' },
-  section: { paddingHorizontal: 6, paddingTop: 48 },
-  sectionKicker: { fontSize: 9, lineHeight: 12, fontWeight: '700', letterSpacing: 1.5 },
-  sectionTitle: { marginTop: 5, fontSize: 29, lineHeight: 33, fontWeight: '700', letterSpacing: -0.9 },
-  specGrid: { marginTop: 18, flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  specTile: { width: '48.4%', minHeight: 132, borderRadius: 26, borderWidth: StyleSheet.hairlineWidth, padding: 14 },
-  specIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  specValue: { marginTop: 17, fontSize: 17, lineHeight: 21, fontWeight: '700', letterSpacing: -0.3 },
-  specLabel: { marginTop: 4, fontSize: 11, lineHeight: 15 },
-  performanceCard: { minHeight: 252, borderRadius: 34, backgroundColor: '#111113', padding: 22 },
-  performanceKicker: { color: 'rgba(255,255,255,0.52)', fontSize: 9, lineHeight: 12, fontWeight: '700', letterSpacing: 1.55 },
-  performanceTitle: { marginTop: 6, color: '#FFFFFF', fontSize: 27, lineHeight: 31, fontWeight: '700', letterSpacing: -0.75 },
-  performanceGrid: { marginTop: 36, flexDirection: 'row', gap: 12 },
-  performanceItem: { flex: 1 },
-  performanceValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 3 },
-  performanceValue: { color: '#FFFFFF', fontSize: 28, lineHeight: 31, fontWeight: '700', letterSpacing: -0.8 },
-  performanceUnit: { color: 'rgba(255,255,255,0.66)', fontSize: 11, lineHeight: 15, fontWeight: '600' },
-  performanceLabel: { marginTop: 5, color: 'rgba(255,255,255,0.52)', fontSize: 10, lineHeight: 14 },
-  variantRail: { paddingTop: 18, paddingRight: 16, gap: 10 },
-  variantCard: { width: 210, minHeight: 78, borderRadius: 24, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  swatch: { width: 46, height: 46, borderRadius: 23, borderWidth: StyleSheet.hairlineWidth },
-  variantCopy: { flex: 1 },
-  variantName: { fontSize: 13, lineHeight: 17, fontWeight: '600' },
-  variantInterior: { marginTop: 3, fontSize: 11, lineHeight: 15 },
-  description: { marginTop: 14, maxWidth: 620, fontSize: 16, lineHeight: 25, letterSpacing: -0.08 },
-  instagramCard: { marginHorizontal: 6, marginTop: 38, minHeight: 76, borderRadius: 26, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  instagramIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
-  instagramCopy: { flex: 1 },
-  instagramTitle: { fontSize: 15, lineHeight: 19, fontWeight: '600' },
-  instagramText: { marginTop: 2, fontSize: 12, lineHeight: 16 },
-  webBottomBar: { position: 'absolute', left: 14, right: 14, bottom: 12, minHeight: 76, borderRadius: 32, paddingHorizontal: 12, paddingVertical: 10 },
-  webBottomInner: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  webBottomPriceCopy: { flex: 1, paddingLeft: 5 },
-  webBottomLabel: { fontSize: 10, lineHeight: 13, fontWeight: '500' },
-  webBottomPrice: { marginTop: 2, fontSize: 16, lineHeight: 20, fontWeight: '700', letterSpacing: -0.25 },
-  requestButton: { minHeight: 52, borderRadius: 26, backgroundColor: '#111113', paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  requestButtonText: { color: '#FFFFFF', fontSize: 14, lineHeight: 18, fontWeight: '600' },
-});
+const s=StyleSheet.create({page:{flex:1},content:{paddingBottom:120},shell:{width:'100%',maxWidth:760,alignSelf:'center',paddingHorizontal:16},center:{flex:1,alignItems:'center',justifyContent:'center'},brandCover:{height:270,borderRadius:34,overflow:'hidden',backgroundColor:'#111'},brandCoverShade:{...StyleSheet.absoluteFillObject,backgroundColor:'rgba(0,0,0,.25)'},brandCoverCopy:{position:'absolute',left:20,bottom:20,flexDirection:'row',alignItems:'center',gap:12},brandMedallion:{width:54,height:54,borderRadius:27,backgroundColor:'rgba(255,255,255,.90)',alignItems:'center',justifyContent:'center'},brandLogo:{width:36,height:36},brandCoverText:{color:'#fff',fontSize:11,lineHeight:14,fontWeight:'700',letterSpacing:1.6},identity:{paddingHorizontal:4,paddingTop:22},identityTop:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:12},eyebrow:{fontSize:10,lineHeight:13,fontWeight:'700',letterSpacing:1.6},title:{marginTop:8,fontSize:44,lineHeight:47,fontWeight:'700',letterSpacing:-1.8},trim:{marginTop:6,fontSize:16,lineHeight:22},priceLine:{marginTop:20,flexDirection:'row',alignItems:'baseline',justifyContent:'space-between'},price:{fontSize:26,lineHeight:31,fontWeight:'700',letterSpacing:-.5},year:{fontSize:15,lineHeight:20,fontWeight:'500'},actions:{marginTop:22,flexDirection:'row',gap:10},book:{flex:1,height:52,borderRadius:26,alignItems:'center',justifyContent:'center'},bookText:{fontSize:14,lineHeight:18,fontWeight:'600'},circle:{width:52,height:52,borderRadius:26,alignItems:'center',justifyContent:'center'},section:{width:'100%',maxWidth:760,alignSelf:'center',marginTop:58},photoRail:{paddingHorizontal:16,paddingTop:22,paddingRight:24,gap:10},specGrid:{paddingHorizontal:16,paddingTop:22,flexDirection:'row',flexWrap:'wrap',gap:10},spec:{width:'48.5%',minHeight:134,borderRadius:28,borderWidth:StyleSheet.hairlineWidth,padding:15},specIcon:{width:36,height:36,borderRadius:18,alignItems:'center',justifyContent:'center'},specValue:{marginTop:17,fontSize:17,lineHeight:21,fontWeight:'700'},specLabel:{marginTop:4,fontSize:11,lineHeight:15},description:{paddingHorizontal:20,paddingTop:18,fontSize:16,lineHeight:25,maxWidth:720},editorialImage:{marginHorizontal:16,marginTop:24,height:350,borderRadius:34},performance:{marginHorizontal:16,minHeight:280,borderRadius:36,backgroundColor:'#111214',padding:24,justifyContent:'flex-end'},performanceKicker:{color:'rgba(255,255,255,.52)',fontSize:10,lineHeight:13,fontWeight:'700',letterSpacing:1.6},performanceTitle:{marginTop:8,color:'#fff',fontSize:31,lineHeight:35,fontWeight:'700',letterSpacing:-1},performanceGrid:{marginTop:34,flexDirection:'row',gap:18},performanceValue:{color:'#fff',fontSize:31,lineHeight:34,fontWeight:'700',letterSpacing:-.9},performanceUnit:{marginTop:3,color:'rgba(255,255,255,.58)',fontSize:10,lineHeight:14},variantRail:{paddingHorizontal:16,paddingTop:22,paddingRight:28,gap:10},variant:{width:220,minHeight:78,borderRadius:25,padding:12,flexDirection:'row',alignItems:'center',gap:12},swatch:{width:48,height:48,borderRadius:24,borderWidth:StyleSheet.hairlineWidth},variantCopy:{flex:1},variantTitle:{fontSize:13,lineHeight:17,fontWeight:'600'},variantText:{marginTop:3,fontSize:11,lineHeight:15},review:{marginHorizontal:16,minHeight:80,borderRadius:28,borderWidth:StyleSheet.hairlineWidth,paddingHorizontal:14,flexDirection:'row',alignItems:'center',gap:12},reviewIcon:{width:44,height:44,borderRadius:22,alignItems:'center',justifyContent:'center'},reviewTitle:{fontSize:14,lineHeight:18,fontWeight:'600'},reviewText:{marginTop:2,fontSize:11,lineHeight:15},finalCard:{marginHorizontal:16,borderRadius:38,padding:26,minHeight:310,justifyContent:'flex-end'},finalKicker:{color:'rgba(255,255,255,.50)',fontSize:10,lineHeight:13,fontWeight:'700',letterSpacing:1.6},finalTitle:{marginTop:9,color:'#fff',fontSize:33,lineHeight:37,fontWeight:'700',letterSpacing:-1.05},finalText:{marginTop:10,color:'rgba(255,255,255,.66)',fontSize:14,lineHeight:21},finalActions:{marginTop:24,flexDirection:'row',gap:8},finalWhite:{flex:1,minHeight:50,borderRadius:25,backgroundColor:'#fff',alignItems:'center',justifyContent:'center'},finalWhiteText:{color:'#111214',fontSize:13,lineHeight:17,fontWeight:'600'},finalDark:{flex:1,minHeight:50,borderRadius:25,borderWidth:1,borderColor:'rgba(255,255,255,.22)',alignItems:'center',justifyContent:'center'},finalDarkText:{color:'#fff',fontSize:13,lineHeight:17,fontWeight:'600'}})

@@ -1,30 +1,30 @@
-import { Platform, PlatformColor, type ColorValue } from 'react-native';
-
-function systemColor(name: string, fallback: string): ColorValue {
-  return Platform.OS === 'ios' ? PlatformColor(name) : fallback;
-}
-
 export const colors = {
   light: {
-    background: systemColor('systemBackground', '#FFFFFF'),
-    surface: systemColor('secondarySystemBackground', '#F8F8FA'),
-    elevated: systemColor('systemBackground', '#FFFFFF'),
-    text: systemColor('label', '#111111'),
-    secondary: systemColor('secondaryLabel', '#6E6E73'),
-    tertiary: systemColor('tertiaryLabel', '#8E8E93'),
-    fill: systemColor('tertiarySystemFill', 'rgba(118,118,128,0.12)'),
-    hairline: systemColor('separator', 'rgba(60,60,67,0.16)'),
-    accent: systemColor('systemBlue', '#007AFF'),
+    background: '#F5F5F3',
+    surface: '#FFFFFF',
+    elevated: '#FFFFFF',
+    text: '#0B0C0D',
+    secondary: 'rgba(60,60,67,0.66)',
+    tertiary: 'rgba(60,60,67,0.36)',
+    hairline: 'rgba(20,20,22,0.10)',
+    fill: 'rgba(118,118,128,0.10)',
+    accent: '#111214',
+    blue: '#0A84FF',
+    green: '#34C759',
+    orange: '#D88632',
   },
   dark: {
-    background: systemColor('systemGroupedBackground', '#000000'),
-    surface: systemColor('secondarySystemGroupedBackground', '#1C1C1E'),
-    elevated: systemColor('systemBackground', '#000000'),
-    text: systemColor('label', '#F5F5F7'),
-    secondary: systemColor('secondaryLabel', '#A1A1A6'),
-    tertiary: systemColor('tertiaryLabel', '#8E8E93'),
-    fill: systemColor('tertiarySystemFill', 'rgba(118,118,128,0.24)'),
-    hairline: systemColor('separator', 'rgba(84,84,88,0.65)'),
-    accent: systemColor('systemBlue', '#0A84FF'),
+    background: '#0B0C0D',
+    surface: '#17181A',
+    elevated: '#1E1F22',
+    text: '#F5F5F7',
+    secondary: 'rgba(235,235,245,0.64)',
+    tertiary: 'rgba(235,235,245,0.34)',
+    hairline: 'rgba(255,255,255,0.12)',
+    fill: 'rgba(118,118,128,0.18)',
+    accent: '#F5F5F7',
+    blue: '#0A84FF',
+    green: '#30D158',
+    orange: '#E39342',
   },
-} as const;
+};

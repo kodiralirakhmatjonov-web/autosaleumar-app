@@ -1,107 +1,38 @@
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
-import { AdaptiveGlass } from '@/src/components/AdaptiveGlass';
+import { Pressable, Share, StyleSheet, Text, View, useColorScheme, type StyleProp, type ViewStyle } from 'react-native';
 import { absoluteMediaUrl } from '@/src/lib/api';
-import { formatPrice, statusLabel } from '@/src/lib/format';
-import type { CatalogCar } from '@/src/lib/types';
+import { firstPhoto, formatPrice } from '@/src/lib/format';
+import type { CatalogCar, Language } from '@/src/lib/types';
 import { colors } from '@/src/theme/colors';
+import { StatusPill } from './StatusPill';
 
-export function CarCard({ car, variant = 'full' }: { car: CatalogCar; variant?: 'full' | 'rail' }) {
-  const palette = colors[useColorScheme() === 'dark' ? 'dark' : 'light'];
-  const image = absoluteMediaUrl(car.coverUrl ?? car.variants?.[0]?.photos?.[0]?.url);
-  const rail = variant === 'rail';
-
-  const open = () => router.push({ pathname: '/car/[slug]', params: { slug: car.slug } });
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`Открыть ${car.brand} ${car.model}`}
-      onPress={open}
-      style={({ pressed }) => [rail ? styles.railCard : styles.fullCard, pressed && styles.pressed]}
-    >
-      <View
-        style={[
-          styles.imageWrap,
-          rail ? styles.railImage : styles.fullImage,
-          { backgroundColor: palette.surface, borderColor: palette.hairline },
-        ]}
-      >
-        {image ? <Image source={image} contentFit="contain" transition={160} style={StyleSheet.absoluteFill} /> : null}
-
-        <AdaptiveGlass style={styles.statusPill}>
-          <View style={styles.statusContent}>
-            <View style={[styles.statusDot, { backgroundColor: car.status === 'in_transit' ? '#FF9F0A' : '#30D158' }]} />
-            <Text style={[styles.statusText, { color: palette.text }]}>{statusLabel(car.status)}</Text>
-          </View>
-        </AdaptiveGlass>
-
-        {car.isNewArrival ? (
-          <AdaptiveGlass dark style={styles.newPill}>
-            <Text style={styles.newText}>NEW</Text>
-          </AdaptiveGlass>
-        ) : null}
+export function CarCard({ car, language='ru', compact=false, style }: { car: CatalogCar; language?: Language; compact?: boolean; style?: StyleProp<ViewStyle> }) {
+  const palette=colors[useColorScheme()==='dark'?'dark':'light'];
+  const photo=absoluteMediaUrl(firstPhoto(car));
+  const color=car.variants?.[0];
+  const open=()=>router.push({pathname:'/car/[slug]',params:{slug:car.slug}});
+  const share=async()=>{ try { await Share.share({message:`${car.brand} ${car.model} — ${formatPrice(car,language)}\nhttps://autosaleumar.com/car/?slug=${encodeURIComponent(car.slug)}`}); } catch {} };
+  return <View style={[s.card,{backgroundColor:palette.surface,borderColor:palette.hairline},compact&&s.compact,style]}>
+    <Pressable onPress={open} style={({pressed})=>[s.press,pressed&&s.pressed]}>
+      <View style={[s.media,compact&&s.compactMedia,{backgroundColor:palette.fill}]}>
+        {photo?<Image source={{uri:photo}} style={StyleSheet.absoluteFill} contentFit="cover" transition={180}/>:<View style={s.fallback}><SymbolView name={{ios:'car.fill',android:'directions_car',web:'directions_car'}} size={42} tintColor={palette.tertiary}/></View>}
+        <View style={s.status}><StatusPill status={car.status} language={language}/></View>
+        <Pressable onPress={(e)=>{e.stopPropagation();void share();}} style={s.share}><View style={[s.shareInner,{backgroundColor:'rgba(255,255,255,0.82)'}]}><SymbolView name={{ios:'square.and.arrow.up',android:'share',web:'share'}} size={16} tintColor="#111214" weight="medium"/></View></Pressable>
       </View>
-
-      <View style={rail ? styles.railCopy : styles.fullCopy}>
-        <View style={styles.eyebrowRow}>
-          <Text numberOfLines={1} style={[styles.brand, { color: palette.secondary }]}>{car.brand.toUpperCase()}</Text>
-          {car.year ? <Text style={[styles.year, { color: palette.tertiary }]}>{car.year}</Text> : null}
-        </View>
-
-        <Text numberOfLines={1} style={[rail ? styles.railModel : styles.fullModel, { color: palette.text }]}>{car.model}</Text>
-        {car.trim ? <Text numberOfLines={1} style={[styles.trim, { color: palette.secondary }]}>{car.trim}</Text> : null}
-
-        {!rail ? (
-          <View style={styles.specLine}>
-            {car.horsepowerHp ? <Text style={[styles.spec, { color: palette.secondary }]}>{car.horsepowerHp} л.с.</Text> : null}
-            {car.driveType ? <Text style={[styles.spec, { color: palette.secondary }]}>{car.driveType}</Text> : null}
-            {car.mileageKm != null ? <Text style={[styles.spec, { color: palette.secondary }]}>{new Intl.NumberFormat('ru-RU').format(car.mileageKm)} км</Text> : null}
-          </View>
-        ) : null}
-
-        <View style={styles.bottomRow}>
-          <Text numberOfLines={1} style={[styles.price, { color: palette.text }]}>{formatPrice(car)}</Text>
-          <AdaptiveGlass interactive style={styles.disclosure}>
-            <SymbolView
-              name={{ ios: 'arrow.up.right', android: 'north_east', web: 'north_east' }}
-              size={13}
-              tintColor={palette.text}
-              weight="semibold"
-            />
-          </AdaptiveGlass>
-        </View>
+      <View style={[s.body,compact&&s.compactBody]}>
+        <View style={s.topline}><Text numberOfLines={1} style={[s.brand,{color:palette.secondary}]}>{car.brand.toUpperCase()}</Text>{car.year?<Text style={[s.year,{color:palette.secondary}]}>{car.year}</Text>:null}</View>
+        <Text numberOfLines={1} style={[s.model,{color:palette.text},compact&&s.compactModel]}>{car.model}</Text>
+        {car.trim?<Text numberOfLines={1} style={[s.trim,{color:palette.secondary}]}>{car.trim}</Text>:null}
+        {car.engineText?<Text numberOfLines={1} style={[s.engine,{color:palette.secondary}]}>{car.engineText}</Text>:null}
+        {color?<View style={s.colorRow}><View style={[s.swatch,{backgroundColor:color.exteriorSwatch||'#111214',borderColor:palette.hairline}]}/><Text numberOfLines={1} style={[s.colorText,{color:palette.secondary}]}>{color.exteriorColorName||'Цвет кузова'}</Text></View>:null}
+        <View style={s.priceRow}><View><Text style={[s.priceLabel,{color:palette.secondary}]}>{language==='ru'?'Цена':'Narx'}</Text><Text numberOfLines={1} style={[s.price,{color:palette.text}]}>{formatPrice(car,language)}</Text></View><View style={[s.chevron,{backgroundColor:palette.fill}]}><SymbolView name={{ios:'chevron.right',android:'chevron_right',web:'chevron_right'}} size={15} tintColor={palette.text} weight="semibold"/></View></View>
       </View>
     </Pressable>
-  );
+  </View>
 }
 
-const styles = StyleSheet.create({
-  pressed: { opacity: 0.82, transform: [{ scale: 0.992 }] },
-  railCard: { width: 286 },
-  fullCard: { width: '100%', marginBottom: 30 },
-  imageWrap: { width: '100%', borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
-  railImage: { aspectRatio: 1.24, borderRadius: 30 },
-  fullImage: { aspectRatio: 1.42, borderRadius: 32 },
-  statusPill: { position: 'absolute', top: 12, left: 12, minHeight: 34, borderRadius: 17, paddingHorizontal: 12, justifyContent: 'center' },
-  statusContent: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  statusDot: { width: 7, height: 7, borderRadius: 4 },
-  statusText: { fontSize: 12, lineHeight: 15, fontWeight: '600', letterSpacing: -0.1 },
-  newPill: { position: 'absolute', top: 12, right: 12, minHeight: 34, borderRadius: 17, paddingHorizontal: 11, justifyContent: 'center' },
-  newText: { color: '#FFFFFF', fontSize: 10, lineHeight: 13, fontWeight: '700', letterSpacing: 0.9 },
-  railCopy: { paddingTop: 13, paddingHorizontal: 2 },
-  fullCopy: { paddingTop: 14, paddingHorizontal: 3 },
-  eyebrowRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  brand: { flex: 1, fontSize: 10, lineHeight: 13, fontWeight: '700', letterSpacing: 0.9 },
-  year: { fontSize: 12, lineHeight: 15, fontWeight: '500' },
-  railModel: { marginTop: 3, fontSize: 21, lineHeight: 25, fontWeight: '700', letterSpacing: -0.55 },
-  fullModel: { marginTop: 3, fontSize: 25, lineHeight: 29, fontWeight: '700', letterSpacing: -0.75 },
-  trim: { marginTop: 3, fontSize: 13, lineHeight: 18 },
-  specLine: { marginTop: 9, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 7 },
-  spec: { fontSize: 12, lineHeight: 16 },
-  bottomRow: { marginTop: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  price: { flex: 1, fontSize: 17, lineHeight: 21, fontWeight: '700', letterSpacing: -0.28 },
-  disclosure: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-});
+const s=StyleSheet.create({
+ card:{borderRadius:32,borderWidth:StyleSheet.hairlineWidth,overflow:'hidden'},compact:{width:300},press:{flex:1},pressed:{opacity:.88},media:{height:310,overflow:'hidden'},compactMedia:{height:220},fallback:{flex:1,alignItems:'center',justifyContent:'center'},status:{position:'absolute',left:14,top:14},share:{position:'absolute',right:14,top:14},shareInner:{width:38,height:38,borderRadius:19,alignItems:'center',justifyContent:'center'},body:{padding:18,paddingTop:16},compactBody:{padding:15},topline:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:10},brand:{flex:1,fontSize:10,lineHeight:13,fontWeight:'700',letterSpacing:1.4},year:{fontSize:13,lineHeight:17,fontWeight:'500'},model:{marginTop:5,fontSize:28,lineHeight:31,fontWeight:'700',letterSpacing:-.9},compactModel:{fontSize:23,lineHeight:27},trim:{marginTop:4,fontSize:14,lineHeight:18},engine:{marginTop:7,fontSize:12,lineHeight:16},colorRow:{marginTop:13,flexDirection:'row',alignItems:'center',gap:7},swatch:{width:13,height:13,borderRadius:7,borderWidth:StyleSheet.hairlineWidth},colorText:{fontSize:11,lineHeight:15,flex:1},priceRow:{marginTop:20,flexDirection:'row',alignItems:'flex-end',justifyContent:'space-between',gap:12},priceLabel:{fontSize:9,lineHeight:12,fontWeight:'600',letterSpacing:.7,textTransform:'uppercase'},price:{marginTop:3,fontSize:20,lineHeight:24,fontWeight:'700',letterSpacing:-.35},chevron:{width:38,height:38,borderRadius:19,alignItems:'center',justifyContent:'center'}
+})

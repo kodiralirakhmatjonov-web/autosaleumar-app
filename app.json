@@ -10,14 +10,23 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.autosaleumar.app"
+      "bundleIdentifier": "com.autosaleumar.app",
+      "config": {
+        "usesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.autosaleumar.app"
     },
     "plugins": [
       "expo-router",
-      "expo-dev-client"
+      "expo-dev-client",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Auto Sale Umar использует медиатеку для загрузки фотографий автомобилей."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
@@ -36,9 +45,6 @@
         "projectId": "51511af7-f45e-4395-92aa-bf90ced182ea"
       }
     },
-    "owner": "kodiralirakhmatjonov",
-    "web": {
-      "output": "server"
-    }
+    "owner": "kodiralirakhmatjonov"
   }
 }

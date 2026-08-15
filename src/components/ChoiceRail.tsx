@@ -1,0 +1,5 @@
+import { Pressable, ScrollView, StyleSheet, Text, useColorScheme } from 'react-native';
+import { SiteGlass } from './SiteGlass';
+import { colors } from '@/src/theme/colors';
+export function ChoiceRail<T extends string>({value,onChange,items}:{value:T;onChange:(v:T)=>void;items:Array<{value:T;label:string}>}){const p=colors[useColorScheme()==='dark'?'dark':'light'];return <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.rail}>{items.map(item=><Pressable key={item.value} onPress={()=>onChange(item.value)}><SiteGlass interactive={value===item.value} style={[s.chip,value===item.value&&{borderColor:p.text}]}><Text style={[s.text,{color:value===item.value?p.text:p.secondary}]}>{item.label}</Text></SiteGlass></Pressable>)}</ScrollView>}
+const s=StyleSheet.create({rail:{gap:8,paddingRight:20},chip:{height:42,borderRadius:21,paddingHorizontal:14,justifyContent:'center',borderWidth:1,borderColor:'transparent'},text:{fontSize:12,lineHeight:15,fontWeight:'600'}})
