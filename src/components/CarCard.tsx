@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
+import { Pressable, StyleSheet, Text, View, useColorScheme, useWindowDimensions } from 'react-native';
 import { absoluteMediaUrl } from '@/src/lib/api';
 import { formatPrice, statusLabel } from '@/src/lib/format';
 import type { CatalogCar } from '@/src/lib/types';
@@ -10,8 +10,10 @@ type CarCardVariant = 'full' | 'rail';
 
 export function CarCard({ car, variant = 'full' }: { car: CatalogCar; variant?: CarCardVariant }) {
   const palette = colors[useColorScheme() === 'dark' ? 'dark' : 'light'];
+  const { width } = useWindowDimensions();
   const image = absoluteMediaUrl(car.coverUrl ?? car.variants?.[0]?.photos?.[0]?.url);
   const rail = variant === 'rail';
+  const railWidth = Math.min(Math.max(width * 0.78, 258), 310);
 
   return (
     <Pressable
@@ -20,25 +22,22 @@ export function CarCard({ car, variant = 'full' }: { car: CatalogCar; variant?: 
       onPress={() => router.push({ pathname: '/car/[slug]', params: { slug: car.slug } })}
       style={({ pressed }) => [
         styles.card,
-        rail && styles.railCard,
+        rail && { width: railWidth },
         { backgroundColor: palette.surface, borderColor: palette.hairline },
         pressed && styles.pressed,
       ]}
     >
       <View style={[styles.imageWrap, { backgroundColor: palette.elevated }]}> 
-        {image ? (
-          <Image source={image} contentFit="contain" transition={180} style={StyleSheet.absoluteFill} />
-        ) : null}
-        <View style={[styles.status, { backgroundColor: palette.fill }]}>
-          <Text style={[styles.statusText, { color: palette.text }]}>{statusLabel(car.status)}</Text>
+        {image ? <Image source={image} contentFit="contain" transition={180} style={StyleSheet.absoluteFill} /> : null}
+        <View style={styles.status}>
+          <Text style={styles.statusText}>{statusLabel(car.status)}</Text>
         </View>
       </View>
 
       <View style={styles.copy}>
         <Text numberOfLines={1} style={[styles.brand, { color: palette.secondary }]}>{car.brand.toUpperCase()}</Text>
-        <Text numberOfLines={2} style={[styles.model, rail && styles.railModel, { color: palette.text }]}> 
-          {car.model}{car.trim ? ` ${car.trim}` : ''}
-        </Text>
+        <Text numberOfLines={1} style={[styles.model, { color: palette.text }]}>{car.model}</Text>
+        {car.trim ? <Text numberOfLines={1} style={[styles.trim, { color: palette.secondary }]}>{car.trim}</Text> : null}
         <View style={styles.metaRow}>
           <Text numberOfLines={1} style={[styles.price, { color: palette.text }]}>{formatPrice(car)}</Text>
           {car.year ? <Text style={[styles.year, { color: palette.secondary }]}>{car.year}</Text> : null}
@@ -49,31 +48,16 @@ export function CarCard({ car, variant = 'full' }: { car: CatalogCar; variant?: 
 }
 
 const styles = StyleSheet.create({
-  card: {
-    width: '100%',
-    borderRadius: 26,
-    overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  railCard: { width: 292, maxWidth: '82%' },
-  pressed: { transform: [{ scale: 0.985 }], opacity: 0.94 },
-  imageWrap: { aspectRatio: 1.46, position: 'relative' },
-  status: {
-    position: 'absolute',
-    left: 12,
-    top: 12,
-    minHeight: 30,
-    borderRadius: 15,
-    paddingHorizontal: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statusText: { fontSize: 12, fontWeight: '600', letterSpacing: -0.1 },
-  copy: { padding: 16, gap: 4 },
-  brand: { fontSize: 11, fontWeight: '700', letterSpacing: 0.75 },
-  model: { fontSize: 21, lineHeight: 24, fontWeight: '700', letterSpacing: -0.55 },
-  railModel: { fontSize: 20, lineHeight: 23 },
-  metaRow: { marginTop: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  price: { flex: 1, fontSize: 16, fontWeight: '600', letterSpacing: -0.2 },
-  year: { fontSize: 14, fontWeight: '500' },
+  card: { width: '100%', borderRadius: 26, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth },
+  pressed: { transform: [{ scale: 0.985 }], opacity: 0.93 },
+  imageWrap: { aspectRatio: 1.48, position: 'relative' },
+  status: { position: 'absolute', left: 12, top: 12, minHeight: 28, borderRadius: 14, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.66)' },
+  statusText: { color: '#FFFFFF', fontSize: 11, lineHeight: 14, fontWeight: '600' },
+  copy: { paddingHorizontal: 15, paddingTop: 14, paddingBottom: 15 },
+  brand: { fontSize: 10, lineHeight: 13, fontWeight: '700', letterSpacing: 0.75 },
+  model: { marginTop: 3, fontSize: 20, lineHeight: 24, fontWeight: '700', letterSpacing: -0.5 },
+  trim: { marginTop: 1, fontSize: 14, lineHeight: 19 },
+  metaRow: { marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  price: { flex: 1, fontSize: 16, lineHeight: 20, fontWeight: '600', letterSpacing: -0.2 },
+  year: { fontSize: 13, lineHeight: 18, fontWeight: '500' },
 });
