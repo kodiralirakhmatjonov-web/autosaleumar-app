@@ -1,38 +1,36 @@
-# AutoSale Umar App
+# Auto Sale Umar — iOS mobile client
 
-Native iOS-first client for the existing AutoSale Umar backend.
+Clean bare React Native iOS application. Expo and EAS are intentionally not used.
 
 ## Architecture
-- Web: existing Next.js repository
-- Mobile: this Expo/React Native repository
-- Backend/API/database/media: existing `https://autosaleumar.com/api/*`
-- iOS 26+: native Liquid Glass via `expo-glass-effect`
-- Navigation: Expo Router Native Tabs (system native tab bar)
 
-## First-time setup
-1. Create a new empty GitHub repository for this app, e.g. `autosaleumar-app`.
-2. Upload the contents of this ZIP to the repository root.
-3. Create/sign in to an Expo account.
-4. Open the repository in GitHub Codespaces.
-5. Run `npm install`.
-6. Run `npx eas-cli@latest login`.
-7. Run `npx eas-cli@latest init` and allow it to add the Expo `projectId` to app config.
-8. Run `npx eas-cli@latest build --profile development --platform ios` to create the first DEV build.
-9. Install the resulting development build on the registered iPhone.
-10. For live Fast Refresh in Codespaces, run `npm run start:tunnel` and open the development server from AutoSale Umar DEV.
+- React Native 0.87
+- React 19.2.3
+- Native Xcode project committed in `ios/`
+- `react-native-webview` for `https://autosaleumar.com`
+- Bundle ID: `com.autosaleumar.app`
+- One GitHub Actions workflow: `.github/workflows/apply-mobile-update.yml`
+- No App Store Connect is required for the registered-device Debug IPA flow
 
-## GitHub automatic OTA updates
-Add repository secret `EXPO_TOKEN`. Every push to `main` will run typecheck and then publish an EAS Update to branch `development`.
+## GitHub Actions
 
-Important: OTA updates and Fast Refresh are different. Fast Refresh requires a running Metro dev server. EAS Update is a published JS/assets update and is normally applied when the app checks/reloads/starts on a compatible runtime.
+Open **Actions → Auto Sale Umar Mobile CI → Run workflow** and choose a task:
 
-## Native rebuild required when
-A new native library/configuration/plugin is added, the runtime changes, or native iOS settings change. Pure React/JS/TS/UI/API changes can normally use Fast Refresh or EAS Update.
+- `validate` — npm dependency tree + repository check + TypeScript
+- `ios-compile` — npm + CocoaPods + unsigned iOS Simulator Xcode compilation on `macos-26`
+- `signing-csr` — creates a certificate signing request and private key artifact
+- `debug-ipa` — builds a signed Debug IPA for an Apple Development provisioning profile
+- `metro` — starts Metro plus an HTTPS Quick Tunnel for Fast Refresh
 
-## API
-Default: `https://autosaleumar.com`. Override with `EXPO_PUBLIC_API_BASE_URL` when needed.
+Uploading `mobile-update.zip` to the repository root automatically uses the same workflow. The update is first validated on Ubuntu, then compiled with CocoaPods/Xcode on `macos-26`, and is committed only after both gates pass. Update ZIPs are not allowed to modify `.github` or `.git`.
 
-## Phone-friendly ZIP update workflow
-After the first repository bootstrap, future assistant updates can be delivered as a ZIP named exactly `mobile-update.zip`.
-Upload that ZIP to the repository root and commit it to `main`.
-`Apply mobile-update.zip` will unpack it, run TypeScript checks, commit the extracted files, and publish a DEV EAS Update when `EXPO_TOKEN` is configured.
+## Apple signing secrets
+
+Configure these only after `validate` and `ios-compile` are green:
+
+- `APPLE_TEAM_ID`
+- `IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64`
+- `IOS_DEVELOPMENT_CERTIFICATE_PASSWORD`
+- `IOS_DEVELOPMENT_PROFILE_BASE64`
+
+The profile must be an **iOS App Development** provisioning profile for `com.autosaleumar.app` and must include the test iPhone UDID.

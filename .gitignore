@@ -1,10 +1,30 @@
-node_modules/
-.expo/
-dist/
-web-build/
-*.log
+# macOS
 .DS_Store
+
+# Xcode
+build/
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcuserstate
+**/.xcode.env.local
+ios/Pods/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Metro
+.metro-health-check*
+
+# CI output
+artifacts/
+*.ipa
+*.xcarchive
+
+# Secrets
 .env
 .env.*
 !.env.example
-mobile-update.zip
