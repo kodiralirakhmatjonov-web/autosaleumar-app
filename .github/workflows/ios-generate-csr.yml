@@ -1,0 +1,190 @@
+name: Auto Sale Umar Apple CSR
+
+"on":
+  workflow_dispatch:
+    inputs:
+      apple_id_email:
+        description: Apple Developer account email used in the CSR
+        required: true
+        type: string
+      common_name:
+        description: Certificate key name
+        required: true
+        default: Auto Sale Umar GitHub CI
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  generate-csr:
+    name: Generate protected Apple Development CSR
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Validate inputs and encryption secret
+        shell: bash
+        env:
+          APPLE_ID_EMAIL: ${{ inputs.apple_id_email }}
+          COMMON_NAME: ${{ inputs.common_name }}
+          CSR_KEY_PASSWORD: ${{ secrets.IOS_CSR_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CSR_KEY_PASSWORD:-}" ]; then
+            echo 'Missing repository secret IOS_CSR_KEY_PASSWORD.' >&2
+            exit 1
+          fi
+
+          if [ "${#CSR_KEY_PASSWORD}" -lt 24 ]; then
+            echo 'IOS_CSR_KEY_PASSWORD must contain at least 24 characters.' >&2
+            exit 1
+          fi
+
+          if ! printf '%s' "$APPLE_ID_EMAIL" | grep -Eq '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'; then
+            echo 'apple_id_email is not a valid email address.' >&2
+            exit 1
+          fi
+
+          if ! printf '%s' "$COMMON_NAME" | grep -Eq '^[A-Za-z0-9 ._-]{3,80}$'; then
+            echo 'common_name may contain only letters, numbers, spaces, dots, underscores and hyphens.' >&2
+            exit 1
+          fi
+
+      - name: Generate CSR and encrypted private key
+        id: csr
+        shell: bash
+        env:
+          APPLE_ID_EMAIL: ${{ inputs.apple_id_email }}
+          COMMON_NAME: ${{ inputs.common_name }}
+          CSR_KEY_PASSWORD: ${{ secrets.IOS_CSR_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          OUT="$RUNNER_TEMP/apple-csr"
+          RAW_KEY="$OUT/private-key.pem"
+          CSR="$OUT/AutoSaleUmar-GitHub.certSigningRequest"
+          ENCRYPTED_KEY="$OUT/AutoSaleUmar-GitHub-private-key.pem.enc"
+          ENCRYPTED_KEY_B64="$OUT/AutoSaleUmar-GitHub-private-key.enc.b64.txt"
+
+          rm -rf "$OUT"
+          mkdir -p "$OUT"
+
+          openssl genpkey \
+            -algorithm RSA \
+            -pkeyopt rsa_keygen_bits:2048 \
+            -out "$RAW_KEY"
+
+          openssl req \
+            -new \
+            -sha256 \
+            -key "$RAW_KEY" \
+            -out "$CSR" \
+            -subj "/emailAddress=${APPLE_ID_EMAIL}/CN=${COMMON_NAME}/O=Auto Sale Umar/C=UZ"
+
+          openssl req -in "$CSR" -noout -verify
+
+          openssl enc \
+            -aes-256-cbc \
+            -salt \
+            -pbkdf2 \
+            -iter 300000 \
+            -md sha256 \
+            -in "$RAW_KEY" \
+            -out "$ENCRYPTED_KEY" \
+            -pass env:CSR_KEY_PASSWORD
+
+          base64 -w 0 "$ENCRYPTED_KEY" > "$ENCRYPTED_KEY_B64"
+          printf '\n' >> "$ENCRYPTED_KEY_B64"
+
+          # Verify that the encrypted backup can be decrypted before deleting the raw key.
+          VERIFY_KEY="$OUT/verify-private-key.pem"
+          openssl enc \
+            -d \
+            -aes-256-cbc \
+            -pbkdf2 \
+            -iter 300000 \
+            -md sha256 \
+            -in "$ENCRYPTED_KEY" \
+            -out "$VERIFY_KEY" \
+            -pass env:CSR_KEY_PASSWORD
+
+          ORIGINAL_PUB="$(openssl pkey -in "$RAW_KEY" -pubout | openssl sha256)"
+          VERIFY_PUB="$(openssl pkey -in "$VERIFY_KEY" -pubout | openssl sha256)"
+          if [ "$ORIGINAL_PUB" != "$VERIFY_PUB" ]; then
+            echo 'Encrypted private-key verification failed.' >&2
+            exit 1
+          fi
+
+          rm -f "$RAW_KEY" "$VERIFY_KEY"
+          test ! -e "$RAW_KEY"
+          test ! -e "$VERIFY_KEY"
+
+          openssl req -in "$CSR" -noout -subject -text > "$OUT/CSR-INFO.txt"
+          (
+            cd "$OUT"
+            sha256sum \
+              AutoSaleUmar-GitHub.certSigningRequest \
+              AutoSaleUmar-GitHub-private-key.pem.enc \
+              AutoSaleUmar-GitHub-private-key.enc.b64.txt \
+              > SHA256SUMS.txt
+          )
+
+          cat > "$OUT/README-NEXT-STEPS.txt" <<'TXT'
+          AUTO SALE UMAR — APPLE DEVELOPMENT CSR
+
+          1. Upload AutoSaleUmar-GitHub.certSigningRequest to Apple Developer:
+             Certificates -> + -> Apple Development -> Continue -> Choose File.
+
+          2. Download the .cer certificate Apple creates. Do not revoke the existing certificates.
+
+          3. Keep AutoSaleUmar-GitHub-private-key.pem.enc private. It is encrypted with the
+             IOS_CSR_KEY_PASSWORD GitHub Actions secret. The password is not stored in this artifact.
+
+          4. Keep AutoSaleUmar-GitHub-private-key.enc.b64.txt. It is the same encrypted key in
+             base64 text form and can later be stored as a GitHub Actions secret without exposing
+             the unencrypted private key.
+
+          Never publish or commit an unencrypted private key.
+          TXT
+
+          echo "artifact_dir=$OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Security preflight before upload
+        shell: bash
+        env:
+          ARTIFACT_DIR: ${{ steps.csr.outputs.artifact_dir }}
+        run: |
+          set -euo pipefail
+
+          test -f "$ARTIFACT_DIR/AutoSaleUmar-GitHub.certSigningRequest"
+          test -f "$ARTIFACT_DIR/AutoSaleUmar-GitHub-private-key.pem.enc"
+          test -f "$ARTIFACT_DIR/AutoSaleUmar-GitHub-private-key.enc.b64.txt"
+          test -f "$ARTIFACT_DIR/SHA256SUMS.txt"
+          test -f "$ARTIFACT_DIR/README-NEXT-STEPS.txt"
+
+          if find "$ARTIFACT_DIR" -maxdepth 1 -type f \( -name 'private-key.pem' -o -name 'verify-private-key.pem' \) | grep -q .; then
+            echo 'Refusing to upload: an unencrypted private key is still present.' >&2
+            exit 1
+          fi
+
+          if grep -R --binary-files=without-match -n -- 'BEGIN .*PRIVATE KEY' "$ARTIFACT_DIR"; then
+            echo 'Refusing to upload: plaintext private-key material detected.' >&2
+            exit 1
+          fi
+
+          (
+            cd "$ARTIFACT_DIR"
+            sha256sum -c SHA256SUMS.txt
+          )
+
+      - name: Upload Apple CSR package
+        uses: actions/upload-artifact@v7
+        with:
+          name: AutoSaleUmar-Apple-CSR
+          path: ${{ steps.csr.outputs.artifact_dir }}
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 9
