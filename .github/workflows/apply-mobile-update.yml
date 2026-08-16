@@ -1,1 +1,551 @@
+name: Auto Sale Umar Mobile CI
 
+"on":
+  push:
+    branches:
+      - main
+    paths:
+      - mobile-update.zip
+  workflow_dispatch:
+    inputs:
+      task:
+        description: Choose a mobile task
+        required: true
+        default: validate
+        type: choice
+        options:
+          - validate
+          - ios-compile
+          - signing-csr
+          - debug-ipa
+          - metro
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    if: github.event_name == 'workflow_dispatch' && inputs.task == 'validate'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.14.0'
+          package-manager-cache: false
+      - name: Install and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
+          npm ls --all >/dev/null
+          npm run repo:check
+          npm run typecheck
+
+  ios-compile:
+    if: github.event_name == 'workflow_dispatch' && inputs.task == 'ios-compile'
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.14.0'
+          package-manager-cache: false
+      - name: Install JavaScript dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
+          npm ls --all >/dev/null
+          npm run repo:check
+          npm run typecheck
+      - name: Install CocoaPods
+        shell: bash
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          pod install
+      - name: Compile iOS Simulator app
+        shell: bash
+        working-directory: ios
+        env:
+          RCT_NO_LAUNCH_PACKAGER: '1'
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -workspace AutoSaleUmar.xcworkspace \
+            -scheme AutoSaleUmar \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+  prepare-update:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.14.0'
+          package-manager-cache: false
+      - name: Safely prepare update
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f mobile-update.zip
+          PREPARED="$RUNNER_TEMP/prepared"
+          UPDATE="$RUNNER_TEMP/update"
+          rm -rf "$PREPARED" "$UPDATE"
+          mkdir -p "$PREPARED" "$UPDATE"
+
+          # Start from the current source, but never let a ZIP mutate workflow files.
+          rsync -a \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude 'node_modules/' \
+            --exclude 'ios/Pods/' \
+            --exclude 'ios/build/' \
+            --exclude 'mobile-update.zip' \
+            ./ "$PREPARED/"
+
+          python3 - "$UPDATE" <<'PY'
+          import pathlib
+          import stat
+          import sys
+          import zipfile
+
+          archive = pathlib.Path('mobile-update.zip')
+          target = pathlib.Path(sys.argv[1]).resolve()
+          with zipfile.ZipFile(archive) as zf:
+              for info in zf.infolist():
+                  name = info.filename.replace('\\', '/')
+                  parts = pathlib.PurePosixPath(name).parts
+                  if not parts:
+                      continue
+                  if name.startswith('/') or '..' in parts:
+                      raise SystemExit(f'Unsafe ZIP path: {info.filename}')
+                  if parts[0] in {'.git', '.github'}:
+                      raise SystemExit(f'ZIP may not modify protected path: {info.filename}')
+                  mode = (info.external_attr >> 16) & 0o170000
+                  if mode == stat.S_IFLNK:
+                      raise SystemExit(f'Symlinks are not allowed in update ZIP: {info.filename}')
+                  out = (target / name).resolve()
+                  if out != target and target not in out.parents:
+                      raise SystemExit(f'Unsafe ZIP path: {info.filename}')
+              zf.extractall(target)
+          PY
+
+          SOURCE="$UPDATE"
+          shopt -s dotglob nullglob
+          entries=("$UPDATE"/*)
+          if [ "${#entries[@]}" -eq 1 ] && [ -d "${entries[0]}" ]; then
+            candidate="${entries[0]}"
+            if [ -f "$candidate/package.json" ] || [ -f "$candidate/App.tsx" ] || [ -d "$candidate/src" ] || [ -d "$candidate/ios" ]; then
+              SOURCE="$candidate"
+            fi
+          fi
+
+          if [ -e "$SOURCE/.github" ] || [ -e "$SOURCE/.git" ]; then
+            echo 'Update ZIP contains a protected .github/.git path.' >&2
+            exit 1
+          fi
+
+          rsync -a "$SOURCE/" "$PREPARED/"
+          rm -f "$PREPARED/mobile-update.zip"
+
+          cd "$PREPARED"
+          # npm install intentionally reconciles package.json and package-lock.json for an update.
+          npm install --no-audit --no-fund
+          npm ls --all >/dev/null
+          npm run repo:check
+          npm run typecheck
+          rm -rf node_modules ios/Pods ios/build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: prepared-mobile-source
+          path: ${{ runner.temp }}/prepared
+          include-hidden-files: true
+          retention-days: 1
+
+  macos-gate-update:
+    if: github.event_name == 'push'
+    needs: prepare-update
+    runs-on: macos-26
+    timeout-minutes: 50
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: prepared-mobile-source
+          path: ${{ runner.temp }}/prepared
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.14.0'
+          package-manager-cache: false
+      - name: Reinstall exact JavaScript tree
+        shell: bash
+        working-directory: ${{ runner.temp }}/prepared
+        run: |
+          set -euo pipefail
+          test -f package-lock.json
+          npm ci --no-audit --no-fund
+          npm ls --all >/dev/null
+          npm run repo:check
+          npm run typecheck
+      - name: Install CocoaPods and compile
+        shell: bash
+        working-directory: ${{ runner.temp }}/prepared/ios
+        env:
+          RCT_NO_LAUNCH_PACKAGER: '1'
+        run: |
+          set -euo pipefail
+          pod install
+          xcodebuild \
+            -workspace AutoSaleUmar.xcworkspace \
+            -scheme AutoSaleUmar \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Package only the source that passed Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/prepared/node_modules" \
+                 "$RUNNER_TEMP/prepared/ios/Pods" \
+                 "$RUNNER_TEMP/prepared/ios/build"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: xcode-gated-mobile-source
+          path: ${{ runner.temp }}/prepared
+          include-hidden-files: true
+          retention-days: 1
+
+  commit-update:
+    if: github.event_name == 'push'
+    needs: macos-gate-update
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          name: xcode-gated-mobile-source
+          path: ${{ runner.temp }}/gated
+      - name: Commit only after all gates pass
+        shell: bash
+        run: |
+          set -euo pipefail
+          rsync -a --delete \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            "$RUNNER_TEMP/gated/" ./
+          rm -f mobile-update.zip
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No source changes to commit.'
+            exit 0
+          fi
+          git commit -m 'Apply verified mobile update'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+  signing-csr:
+    if: github.event_name == 'workflow_dispatch' && inputs.task == 'signing-csr'
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - name: Generate Apple certificate request
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/apple-signing"
+          openssl genrsa -out "$RUNNER_TEMP/apple-signing/AutoSaleUmar.key" 2048
+          openssl req -new \
+            -key "$RUNNER_TEMP/apple-signing/AutoSaleUmar.key" \
+            -out "$RUNNER_TEMP/apple-signing/AutoSaleUmar.certSigningRequest" \
+            -subj '/CN=Auto Sale Umar iOS/O=Auto Sale Umar/C=UZ'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: AutoSaleUmar-Apple-CSR-and-private-key
+          path: ${{ runner.temp }}/apple-signing
+          retention-days: 1
+
+  debug-ipa:
+    if: github.event_name == 'workflow_dispatch' && inputs.task == 'debug-ipa'
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      BUNDLE_ID: com.autosaleumar.app
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.14.0'
+          package-manager-cache: false
+      - name: Validate required signing secrets
+        shell: bash
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CERT: ${{ secrets.IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.IOS_DEVELOPMENT_CERTIFICATE_PASSWORD }}
+          PROFILE: ${{ secrets.IOS_DEVELOPMENT_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          for name in TEAM_ID CERT CERT_PASSWORD PROFILE; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required secret: $name" >&2
+              exit 1
+            fi
+          done
+      - name: Install and validate source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
+          npm ls --all >/dev/null
+          npm run repo:check
+          npm run typecheck
+          cd ios
+          pod install
+      - name: Import Apple Development certificate and profile
+        id: signing
+        shell: bash
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CERT_BASE64: ${{ secrets.IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.IOS_DEVELOPMENT_CERTIFICATE_PASSWORD }}
+          PROFILE_BASE64: ${{ secrets.IOS_DEVELOPMENT_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          CERT_PATH="$RUNNER_TEMP/development.p12"
+          PROFILE_PATH="$RUNNER_TEMP/development.mobileprovision"
+          PROFILE_PLIST="$RUNNER_TEMP/profile.plist"
+
+          python3 - "$CERT_PATH" "$PROFILE_PATH" <<'PY'
+          import base64
+          import os
+          import pathlib
+          import sys
+
+          def decode_secret(name: str, target: str) -> None:
+              raw = os.environ[name].strip()
+              try:
+                  payload = base64.b64decode(raw, validate=True)
+              except Exception as exc:
+                  raise SystemExit(f'Invalid base64 in {name}: {exc}')
+              if not payload:
+                  raise SystemExit(f'Decoded {name} is empty')
+              pathlib.Path(target).write_bytes(payload)
+
+          decode_secret('CERT_BASE64', sys.argv[1])
+          decode_secret('PROFILE_BASE64', sys.argv[2])
+          PY
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERT_PATH" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+
+          security cms -D -i "$PROFILE_PATH" > "$PROFILE_PLIST"
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$PROFILE_PLIST")
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$PROFILE_PLIST")
+          PROFILE_TEAM=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$PROFILE_PLIST")
+          APP_IDENTIFIER=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$PROFILE_PLIST")
+
+          if [ "$PROFILE_TEAM" != "$TEAM_ID" ]; then
+            echo "Provisioning profile Team ID mismatch: $PROFILE_TEAM" >&2
+            exit 1
+          fi
+          if [ "$APP_IDENTIFIER" != "$TEAM_ID.$BUNDLE_ID" ]; then
+            echo "Provisioning profile bundle mismatch: $APP_IDENTIFIER" >&2
+            exit 1
+          fi
+          if ! /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices:0' "$PROFILE_PLIST" >/dev/null 2>&1; then
+            echo 'Profile contains no registered devices. Use an iOS App Development profile.' >&2
+            exit 1
+          fi
+
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+          echo "profile_name=$PROFILE_NAME" >> "$GITHUB_OUTPUT"
+      - name: Archive signed Debug IPA with offline JS fallback
+        shell: bash
+        working-directory: ios
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          PROFILE_NAME: ${{ steps.signing.outputs.profile_name }}
+          FORCE_BUNDLING: '1'
+          RCT_NO_LAUNCH_PACKAGER: '1'
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -workspace AutoSaleUmar.xcworkspace \
+            -scheme AutoSaleUmar \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/AutoSaleUmar.xcarchive" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY='Apple Development' \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
+            archive
+      - name: Export development IPA
+        shell: bash
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          PROFILE_NAME: ${{ steps.signing.outputs.profile_name }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>development</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>provisioningProfiles</key><dict><key>$BUNDLE_ID</key><string>$PROFILE_NAME</string></dict>
+            <key>stripSwiftSymbols</key><true/>
+          </dict></plist>
+          PLIST
+          rm -rf "$RUNNER_TEMP/export"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/AutoSaleUmar.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+          IPA="$(find "$RUNNER_TEMP/export" -maxdepth 1 -name '*.ipa' -print -quit)"
+          test -n "$IPA"
+          cp "$IPA" "$RUNNER_TEMP/AutoSaleUmar-Debug.ipa"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: AutoSaleUmar-Debug-iPhone
+          path: ${{ runner.temp }}/AutoSaleUmar-Debug.ipa
+          retention-days: 7
+
+  metro:
+    if: github.event_name == 'workflow_dispatch' && inputs.task == 'metro'
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.14.0'
+          package-manager-cache: false
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
+          npm run repo:check
+          npm run typecheck
+      - name: Start Metro and HTTPS tunnel
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/metro"
+          nohup npx react-native start --host 0.0.0.0 --port 8081 --reset-cache \
+            > "$RUNNER_TEMP/metro/metro.log" 2>&1 &
+          METRO_PID=$!
+
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8081/status | grep -q 'packager-status:running'; then
+              break
+            fi
+            if ! kill -0 "$METRO_PID" 2>/dev/null; then
+              cat "$RUNNER_TEMP/metro/metro.log" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8081/status | grep -q 'packager-status:running'
+
+          curl -fsSL \
+            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+            -o "$RUNNER_TEMP/metro/cloudflared"
+          chmod +x "$RUNNER_TEMP/metro/cloudflared"
+          nohup "$RUNNER_TEMP/metro/cloudflared" tunnel \
+            --no-autoupdate \
+            --url http://127.0.0.1:8081 \
+            > "$RUNNER_TEMP/metro/cloudflared.log" 2>&1 &
+          TUNNEL_PID=$!
+
+          URL=''
+          for _ in $(seq 1 60); do
+            URL="$(grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com' "$RUNNER_TEMP/metro/cloudflared.log" | tail -n 1 || true)"
+            [ -n "$URL" ] && break
+            if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
+              cat "$RUNNER_TEMP/metro/cloudflared.log" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          if [ -z "$URL" ]; then
+            cat "$RUNNER_TEMP/metro/cloudflared.log" >&2
+            exit 1
+          fi
+
+          {
+            echo '## Metro tunnel is ready'
+            echo
+            echo "**$URL**"
+            echo
+            echo 'On iPhone: Settings → Apps → Auto Sale Umar → Metro tunnel URL, paste this URL, then fully restart the app.'
+            echo 'Keep this workflow running while using Fast Refresh.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "METRO URL: $URL"
+
+          LAST_LOCK="$(sha256sum package-lock.json 2>/dev/null | cut -d' ' -f1 || true)"
+          while kill -0 "$METRO_PID" 2>/dev/null && kill -0 "$TUNNEL_PID" 2>/dev/null; do
+            git fetch --quiet origin main
+            REMOTE="$(git rev-parse origin/main)"
+            LOCAL="$(git rev-parse HEAD)"
+            if [ "$REMOTE" != "$LOCAL" ]; then
+              git reset --hard origin/main
+              NEW_LOCK="$(sha256sum package-lock.json 2>/dev/null | cut -d' ' -f1 || true)"
+              if [ "$NEW_LOCK" != "$LAST_LOCK" ]; then
+                echo 'package-lock.json changed. Restart Metro workflow to install the new native/JS dependencies.'
+                exit 1
+              fi
+              echo "Updated Metro workspace to $REMOTE"
+            fi
+            sleep 15
+          done
+          echo 'Metro or cloudflared stopped unexpectedly.' >&2
+          cat "$RUNNER_TEMP/metro/metro.log" >&2 || true
+          cat "$RUNNER_TEMP/metro/cloudflared.log" >&2 || true
+          exit 1
