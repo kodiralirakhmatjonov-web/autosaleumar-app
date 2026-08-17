@@ -20,6 +20,9 @@ type TabKey = 'home' | 'cars' | 'visit' | 'settings';
 type ThemeMode = 'system' | 'light' | 'dark';
 type Language = 'ru' | 'uz';
 
+
+const APP_WEB_SHELL_SCRIPT = "(() => {\n  const STYLE_ID = 'asu-native-shell-style';\n  const HIDDEN_ATTR = 'data-asu-native-hidden';\n  const CSS = \"\\n:root {\\n  --asu-native-bottom-inset: 112px;\\n  --header-height: 0px !important;\\n  --nav-height: 0px !important;\\n}\\nhtml, body {\\n  margin-top: 0 !important;\\n  padding-top: 0 !important;\\n  overscroll-behavior-y: none;\\n}\\nbody {\\n  padding-bottom: var(--asu-native-bottom-inset) !important;\\n}\\nheader,\\n[role=\\\"banner\\\"],\\n[data-site-header],\\n[data-app-header],\\n[data-header-root],\\n[data-mobile-header] {\\n  display: none !important;\\n  visibility: hidden !important;\\n  height: 0 !important;\\n  min-height: 0 !important;\\n  max-height: 0 !important;\\n  margin: 0 !important;\\n  padding: 0 !important;\\n  border: 0 !important;\\n  overflow: hidden !important;\\n  pointer-events: none !important;\\n}\\n[data-asu-native-hidden=\\\"1\\\"] {\\n  display: none !important;\\n  visibility: hidden !important;\\n  height: 0 !important;\\n  min-height: 0 !important;\\n  max-height: 0 !important;\\n  margin: 0 !important;\\n  padding: 0 !important;\\n  border: 0 !important;\\n  overflow: hidden !important;\\n  pointer-events: none !important;\\n}\\n\";\n\n  const ensureStyle = () => {\n    let style = document.getElementById(STYLE_ID);\n    if (!style) {\n      style = document.createElement('style');\n      style.id = STYLE_ID;\n      style.textContent = CSS;\n      document.head.appendChild(style);\n    }\n  };\n\n  const hideTopChrome = () => {\n    const nodes = document.querySelectorAll(\n      'header, [role=\"banner\"], [data-site-header], [data-app-header], [data-header-root], [data-mobile-header], body > nav, #__next > nav, #root > nav'\n    );\n    nodes.forEach((node) => node.setAttribute(HIDDEN_ATTR, '1'));\n\n    const structuralCandidates = document.querySelectorAll('body > *, #__next > *, #root > *');\n    structuralCandidates.forEach((node) => {\n      if (!(node instanceof HTMLElement) || node.hasAttribute(HIDDEN_ATTR)) return;\n      const rect = node.getBoundingClientRect();\n      const style = window.getComputedStyle(node);\n      const text = (node.textContent || '').replace(/\\s+/g, ' ').trim();\n      const hasBrand = /AUTO\\s*SALE\\s*UMAR/i.test(text) || !!node.querySelector('img[alt*=\"Auto Sale Umar\" i]');\n      const hasMenuControl = !!node.querySelector('button[aria-label*=\"menu\" i], button[aria-label*=\"\u043c\u0435\u043d\u044e\" i], [data-menu-trigger], [aria-controls*=\"menu\" i]');\n      const topChrome = rect.top <= 20 && rect.height >= 48 && rect.height <= 190;\n      const anchored = style.position === 'fixed' || style.position === 'sticky' || topChrome;\n      if (topChrome && anchored && hasBrand && hasMenuControl) {\n        node.setAttribute(HIDDEN_ATTR, '1');\n      }\n    });\n  };\n\n  const apply = () => {\n    ensureStyle();\n    hideTopChrome();\n  };\n\n  apply();\n  new MutationObserver(apply).observe(document.documentElement, {childList: true, subtree: true});\n})();\ntrue;";
+
 const TAB_PATHS: Record<Exclude<TabKey, 'settings'>, string> = {
   home: '/',
   cars: '/cars/',
@@ -112,6 +115,8 @@ export default function App() {
             key={`${tab}-${language}-${themeMode}`}
             source={{uri: activeUrl}}
             style={{backgroundColor: palette.bg}}
+            injectedJavaScriptBeforeContentLoaded={APP_WEB_SHELL_SCRIPT}
+            injectedJavaScript={APP_WEB_SHELL_SCRIPT}
             originWhitelist={['*']}
             allowsBackForwardNavigationGestures
             javaScriptEnabled
@@ -144,21 +149,45 @@ export default function App() {
 function BottomBar({tab, onSelect, palette}: {tab: TabKey; onSelect: (v: TabKey) => void; palette: Palette}) {
   const items: Array<[TabKey, string, string]> = [
     ['home', '⌂', 'Главная'],
-    ['cars', '▣', 'Автомобили'],
-    ['visit', '⌖', 'Визит'],
-    ['settings', '⚙', 'Настройки'],
+    ['cars', '◇', 'Автомобили'],
+    ['visit', '⊙', 'Визит'],
+    ['settings', '⚙︎', 'Настройки'],
   ];
+
   return (
-    <View style={[styles.bottomBar, {backgroundColor: palette.bar, borderTopColor: palette.line}]}>
-      {items.map(([key, icon, label]) => {
-        const active = tab === key;
-        return (
-          <Pressable key={key} style={styles.tabButton} onPress={() => onSelect(key)} accessibilityRole="button">
-            <Text style={[styles.tabIcon, {color: active ? palette.text : palette.muted}]}>{icon}</Text>
-            <Text style={[styles.tabLabel, {color: active ? palette.text : palette.muted}]}>{label}</Text>
-          </Pressable>
-        );
-      })}
+    <View pointerEvents="box-none" style={styles.bottomDock}>
+      <View
+        style={[
+          styles.bottomBar,
+          {
+            backgroundColor: palette.glass,
+            borderColor: palette.glassBorder,
+            shadowColor: '#000000',
+          },
+        ]}>
+        {items.map(([key, icon, label]) => {
+          const active = tab === key;
+          return (
+            <Pressable
+              key={key}
+              onPress={() => onSelect(key)}
+              accessibilityRole="button"
+              accessibilityState={{selected: active}}
+              hitSlop={4}
+              style={({pressed}: {pressed: boolean}) => [
+                styles.tabButton,
+                active && {
+                  backgroundColor: palette.glassActive,
+                  borderColor: palette.glassActiveBorder,
+                },
+                pressed && styles.tabButtonPressed,
+              ]}>
+              <Text style={[styles.tabIcon, {color: active ? palette.text : palette.muted}]}>{icon}</Text>
+              <Text style={[styles.tabLabel, {color: active ? palette.text : palette.muted}]}>{label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -261,16 +290,73 @@ function ChoiceRow({label, selected, palette, onPress, last}: {label: string; se
   );
 }
 
-type Palette = {bg: string; card: string; bar: string; input: string; text: string; muted: string; line: string};
-const LIGHT: Palette = {bg: '#F6F6F4', card: '#FFFFFF', bar: 'rgba(255,255,255,0.96)', input: '#F4F4F4', text: '#111111', muted: '#737373', line: '#E4E4E2'};
-const DARK: Palette = {bg: '#0B0B0C', card: '#161618', bar: 'rgba(18,18,20,0.97)', input: '#222225', text: '#F7F7F7', muted: '#929297', line: '#2B2B2F'};
+type Palette = {
+  bg: string;
+  card: string;
+  input: string;
+  text: string;
+  muted: string;
+  line: string;
+  glass: string;
+  glassBorder: string;
+  glassActive: string;
+  glassActiveBorder: string;
+};
+const LIGHT: Palette = {
+  bg: '#F6F6F4',
+  card: '#FFFFFF',
+  input: '#F4F4F4',
+  text: '#111111',
+  muted: '#77777C',
+  line: '#E4E4E2',
+  glass: 'rgba(246,246,246,0.78)',
+  glassBorder: 'rgba(255,255,255,0.82)',
+  glassActive: 'rgba(255,255,255,0.94)',
+  glassActiveBorder: 'rgba(255,255,255,0.98)',
+};
+const DARK: Palette = {
+  bg: '#0B0B0C',
+  card: '#161618',
+  input: '#222225',
+  text: '#F7F7F7',
+  muted: '#929297',
+  line: '#2B2B2F',
+  glass: 'rgba(24,24,27,0.80)',
+  glassBorder: 'rgba(255,255,255,0.10)',
+  glassActive: 'rgba(255,255,255,0.12)',
+  glassActiveBorder: 'rgba(255,255,255,0.16)',
+};
 
 const styles = StyleSheet.create({
-  root: {flex: 1}, content: {flex: 1},
-  bottomBar: {height: 72, flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, paddingBottom: 6},
-  tabButton: {flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3},
-  tabIcon: {fontSize: 23, lineHeight: 26, fontWeight: '600'}, tabLabel: {fontSize: 10.5, fontWeight: '600'},
-  settings: {paddingHorizontal: 18, paddingTop: 24, paddingBottom: 42},
+  root: {flex: 1},
+  content: {flex: 1},
+  bottomDock: {position: 'absolute', left: 12, right: 12, bottom: 8, zIndex: 50},
+  bottomBar: {
+    height: 72,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 30,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 5,
+    shadowOffset: {width: 0, height: 10},
+    shadowOpacity: 0.17,
+    shadowRadius: 24,
+    elevation: 14,
+  },
+  tabButton: {
+    flex: 1,
+    height: 60,
+    borderRadius: 25,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  tabButtonPressed: {opacity: 0.72, transform: [{scale: 0.98}]},
+  tabIcon: {fontSize: 21, lineHeight: 23, fontWeight: '600'},
+  tabLabel: {fontSize: 10.5, lineHeight: 13, fontWeight: '600'},
+  settings: {paddingHorizontal: 18, paddingTop: 24, paddingBottom: 126},
   kicker: {fontSize: 11, letterSpacing: 1.8, fontWeight: '800'},
   title: {fontSize: 34, lineHeight: 40, fontWeight: '800', marginTop: 8},
   subtitle: {fontSize: 15, lineHeight: 21, marginTop: 5, marginBottom: 24},
