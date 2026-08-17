@@ -1,0 +1,185 @@
+name: Auto Sale Umar Metro Live
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: autosaleumar-metro-live
+  cancel-in-progress: true
+
+jobs:
+  metro-live:
+    name: Metro + Cloudflare Tunnel
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.1'
+          cache: npm
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Install pinned cloudflared
+        shell: bash
+        run: |
+          set -euo pipefail
+          CLOUDFLARED_VERSION='2026.8.2'
+          BIN="$RUNNER_TEMP/cloudflared"
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64" \
+            --output "$BIN"
+          chmod +x "$BIN"
+          "$BIN" --version
+          echo "CLOUDFLARED_BIN=$BIN" >> "$GITHUB_ENV"
+
+      - name: Start Metro and verify local server
+        shell: bash
+        run: |
+          set -euo pipefail
+          METRO_LOG="$RUNNER_TEMP/metro.log"
+          nohup npm start -- --host 0.0.0.0 --port 8081 >"$METRO_LOG" 2>&1 &
+          echo $! > "$RUNNER_TEMP/metro.pid"
+
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --max-time 2 http://127.0.0.1:8081/status | grep -q 'packager-status:running'; then
+              echo 'Metro is running on 127.0.0.1:8081'
+              exit 0
+            fi
+            if ! kill -0 "$(cat "$RUNNER_TEMP/metro.pid")" 2>/dev/null; then
+              echo 'Metro exited unexpectedly.' >&2
+              cat "$METRO_LOG" >&2
+              exit 1
+            fi
+            sleep 1
+          done
+
+          echo 'Metro did not become ready in time.' >&2
+          cat "$METRO_LOG" >&2
+          exit 1
+
+      - name: Start Cloudflare Quick Tunnel
+        id: tunnel
+        shell: bash
+        run: |
+          set -euo pipefail
+          TUNNEL_LOG="$RUNNER_TEMP/cloudflared.log"
+          nohup "$CLOUDFLARED_BIN" tunnel --no-autoupdate --url http://127.0.0.1:8081 >"$TUNNEL_LOG" 2>&1 &
+          echo $! > "$RUNNER_TEMP/cloudflared.pid"
+
+          METRO_URL=''
+          for attempt in $(seq 1 90); do
+            METRO_URL="$(grep -Eo 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' "$TUNNEL_LOG" | head -n 1 || true)"
+            if [ -n "$METRO_URL" ]; then
+              break
+            fi
+            if ! kill -0 "$(cat "$RUNNER_TEMP/cloudflared.pid")" 2>/dev/null; then
+              echo 'cloudflared exited unexpectedly.' >&2
+              cat "$TUNNEL_LOG" >&2
+              exit 1
+            fi
+            sleep 1
+          done
+
+          if [ -z "$METRO_URL" ]; then
+            echo 'Could not obtain a trycloudflare.com URL.' >&2
+            cat "$TUNNEL_LOG" >&2
+            exit 1
+          fi
+
+          echo "Tunnel URL: $METRO_URL"
+
+          READY=0
+          for attempt in $(seq 1 45); do
+            if curl --fail --silent --max-time 5 "$METRO_URL/status" | grep -q 'packager-status:running'; then
+              READY=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$READY" -ne 1 ]; then
+            echo 'Public tunnel did not reach Metro successfully.' >&2
+            cat "$TUNNEL_LOG" >&2
+            exit 1
+          fi
+
+          ENCODED_URL="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$METRO_URL")"
+          DEEP_LINK="autosaleumar://metro?url=${ENCODED_URL}"
+
+          echo "metro_url=$METRO_URL" >> "$GITHUB_OUTPUT"
+          echo "deep_link=$DEEP_LINK" >> "$GITHUB_OUTPUT"
+          echo "METRO_URL=$METRO_URL" >> "$GITHUB_ENV"
+
+          {
+            echo '# Auto Sale Umar — Metro Live'
+            echo
+            echo 'Metro and the HTTPS Cloudflare tunnel are running.'
+            echo
+            echo '## 1. Metro URL'
+            echo
+            echo '```text'
+            echo "$METRO_URL"
+            echo '```'
+            echo
+            echo '## 2. Open this exact deep link on the registered iPhone'
+            echo
+            echo '```text'
+            echo "$DEEP_LINK"
+            echo '```'
+            echo
+            echo 'After iOS opens Auto Sale Umar, fully close the app from the app switcher and open it again.'
+            echo
+            echo 'The session stays alive while this GitHub Actions job is running (maximum about 5.5 hours).'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo '============================================================'
+          echo 'AUTO SALE UMAR METRO IS READY'
+          echo "METRO_URL=$METRO_URL"
+          echo "OPEN_ON_IPHONE=$DEEP_LINK"
+          echo '============================================================'
+
+      - name: Keep Metro alive and sync new main commits
+        shell: bash
+        run: |
+          set -euo pipefail
+          METRO_PID="$(cat "$RUNNER_TEMP/metro.pid")"
+          TUNNEL_PID="$(cat "$RUNNER_TEMP/cloudflared.pid")"
+          CURRENT_SHA="$(git rev-parse HEAD)"
+
+          echo "Watching main from $CURRENT_SHA"
+          echo "Metro URL: $METRO_URL"
+
+          while true; do
+            if ! kill -0 "$METRO_PID" 2>/dev/null; then
+              echo 'Metro process stopped.' >&2
+              cat "$RUNNER_TEMP/metro.log" >&2
+              exit 1
+            fi
+            if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
+              echo 'Cloudflare tunnel stopped.' >&2
+              cat "$RUNNER_TEMP/cloudflared.log" >&2
+              exit 1
+            fi
+
+            git fetch origin main --quiet
+            NEXT_SHA="$(git rev-parse origin/main)"
+            if [ "$NEXT_SHA" != "$CURRENT_SHA" ]; then
+              echo "New main commit detected: $CURRENT_SHA -> $NEXT_SHA"
+              git reset --hard "$NEXT_SHA"
+              CURRENT_SHA="$NEXT_SHA"
+              echo 'Working tree updated. Metro will trigger Fast Refresh for JS/TS changes.'
+            fi
+
+            sleep 5
+          done
