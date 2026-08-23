@@ -14,6 +14,7 @@ on:
         type: choice
         options:
           - validate
+          - prepare-signing
           - testflight
 
 permissions:
@@ -42,6 +43,69 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+
+  prepare-signing:
+    if: github.event_name == 'workflow_dispatch' && inputs.task == 'prepare-signing'
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - name: Check signing password
+        env:
+          IOS_SIGNING_KEY_PASSWORD: ${{ secrets.IOS_SIGNING_KEY_PASSWORD }}
+          APPLE_ID_EMAIL: ${{ secrets.APPLE_ID_EMAIL }}
+        run: |
+          set -euo pipefail
+          test -n "$IOS_SIGNING_KEY_PASSWORD" || { echo 'Missing GitHub secret: IOS_SIGNING_KEY_PASSWORD'; exit 1; }
+          test -n "$APPLE_ID_EMAIL" || { echo 'Missing GitHub secret: APPLE_ID_EMAIL'; exit 1; }
+
+      - name: Generate Auto Sale Umar Distribution CSR
+        env:
+          IOS_SIGNING_KEY_PASSWORD: ${{ secrets.IOS_SIGNING_KEY_PASSWORD }}
+          APPLE_ID_EMAIL: ${{ secrets.APPLE_ID_EMAIL }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/asu-signing-output"
+
+          openssl genrsa -out "$RUNNER_TEMP/asu-signing-output/distribution-private-key.pem" 2048
+
+          openssl req \
+            -new \
+            -sha256 \
+            -key "$RUNNER_TEMP/asu-signing-output/distribution-private-key.pem" \
+            -out "$RUNNER_TEMP/asu-signing-output/autosaleumar-app.certSigningRequest" \
+            -subj "/emailAddress=${APPLE_ID_EMAIL}/CN=Auto Sale Umar Distribution/C=UZ"
+
+          openssl enc \
+            -aes-256-cbc \
+            -salt \
+            -pbkdf2 \
+            -iter 200000 \
+            -in "$RUNNER_TEMP/asu-signing-output/distribution-private-key.pem" \
+            -out "$RUNNER_TEMP/asu-signing-output/distribution-private-key.enc" \
+            -pass env:IOS_SIGNING_KEY_PASSWORD
+
+          rm -f "$RUNNER_TEMP/asu-signing-output/distribution-private-key.pem"
+
+          cat > "$RUNNER_TEMP/asu-signing-output/NEXT-STEPS.txt" <<'TXT'
+          PUBLIC-REPO-SAFE SIGNING SETUP
+
+          1. In Apple Developer create a NEW Apple Distribution certificate using:
+             autosaleumar-app.certSigningRequest
+          2. Regenerate/create the Auto Sale Umar App Store provisioning profile for
+             com.autosaleumar.app and select THAT NEW certificate.
+          3. Keep distribution-private-key.enc. It is encrypted with the repository
+             secret IOS_SIGNING_KEY_PASSWORD used during this workflow run.
+          4. Do not commit signing files to the public repository.
+          TXT
+
+      - name: Upload encrypted signing bootstrap
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoSaleUmar-Encrypted-Signing-Bootstrap
+          path: ${{ runner.temp }}/asu-signing-output/
+          retention-days: 1
+          if-no-files-found: error
 
   apply-update:
     if: github.event_name == 'push'
