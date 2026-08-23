@@ -1,0 +1,12 @@
+Auto Sale Umar public-repository signing mode is enabled.
+
+Signing keys and provisioning profiles must NOT exist in the repository.
+The TestFlight workflow reads them only from encrypted GitHub Actions Secrets:
+- IOS_DISTRIBUTION_PRIVATE_KEY_B64
+- IOS_APP_STORE_PROFILE_B64
+
+Existing secrets still required:
+- APPLE_TEAM_ID
+- APPLE_ID_EMAIL
+- APPLE_APP_SPECIFIC_PASSWORD
+- IOS_SIGNING_KEY_PASSWORD

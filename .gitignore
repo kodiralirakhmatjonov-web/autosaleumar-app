@@ -4,9 +4,11 @@ DerivedData/
 *.xcuserstate
 xcuserdata/
 AutoSaleUmar.xcodeproj/
-Signing/*.cer
-Signing/*.pem
-Signing/*.p12
-!Signing/README.md
-!Signing/*.enc
-!Signing/*.mobileprovision
+
+# Signing material must never be committed. TestFlight workflow reconstructs it from GitHub Secrets.
+Signing/
+*.mobileprovision
+*.p12
+*.pem
+*.cer
+*.key
