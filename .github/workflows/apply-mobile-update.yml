@@ -14,7 +14,6 @@ on:
         type: choice
         options:
           - validate
-          - prepare-signing
           - testflight
 
 permissions:
@@ -81,7 +80,7 @@ jobs:
                       continue
                   if name.startswith('/') or '..' in parts:
                       raise SystemExit(f'Unsafe ZIP path: {name}')
-                  if parts[0] in {'.git', '.github'}:
+                  if parts[0] in {'.git', '.github', 'Signing'}:
                       raise SystemExit(f'ZIP may not modify protected path: {name}')
                   mode = (info.external_attr >> 16) & 0o170000
                   if mode == stat.S_IFLNK:
@@ -152,10 +151,21 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
+      - name: Public-repository signing safety gate
+        run: |
+          set -euo pipefail
+          rm -rf Signing
+          if find . -path './.git' -prune -o -type f \
+            \( -name '*.mobileprovision' -o -name '*.p12' -o -name '*.pem' -o -name '*.cer' -o -name 'distribution-private-key.enc' \) \
+            -print | grep -q .; then
+            echo 'Refusing to commit signing material to a public repository.'
+            exit 1
+          fi
+
       - name: Commit only verified native source
         run: |
           set -euo pipefail
-          rm -rf AutoSaleUmar.xcodeproj
+          rm -rf AutoSaleUmar.xcodeproj Signing
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
@@ -166,57 +176,6 @@ jobs:
           git commit -m 'Migrate Auto Sale Umar to native SwiftUI iOS'
           git pull --rebase origin main
           git push origin HEAD:main
-
-  prepare-signing:
-    if: github.event_name == 'workflow_dispatch' && inputs.task == 'prepare-signing'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Check secrets
-        env:
-          APPLE_ID_EMAIL: ${{ secrets.APPLE_ID_EMAIL }}
-          IOS_SIGNING_KEY_PASSWORD: ${{ secrets.IOS_SIGNING_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          test -n "$APPLE_ID_EMAIL" || { echo 'Missing secret: APPLE_ID_EMAIL'; exit 1; }
-          test -n "$IOS_SIGNING_KEY_PASSWORD" || { echo 'Missing secret: IOS_SIGNING_KEY_PASSWORD'; exit 1; }
-
-      - name: Generate encrypted Apple Distribution key and CSR
-        env:
-          APPLE_ID_EMAIL: ${{ secrets.APPLE_ID_EMAIL }}
-          IOS_SIGNING_KEY_PASSWORD: ${{ secrets.IOS_SIGNING_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          OUT="$RUNNER_TEMP/signing-output"
-          mkdir -p "$OUT"
-          openssl genrsa -out "$OUT/distribution-private-key.pem" 2048
-          openssl req \
-            -new \
-            -sha256 \
-            -key "$OUT/distribution-private-key.pem" \
-            -out "$OUT/autosaleumar-app.certSigningRequest" \
-            -subj "/emailAddress=${APPLE_ID_EMAIL}/CN=Auto Sale Umar Distribution/C=UZ"
-          openssl enc \
-            -aes-256-cbc \
-            -salt \
-            -pbkdf2 \
-            -iter 200000 \
-            -in "$OUT/distribution-private-key.pem" \
-            -out "$OUT/distribution-private-key.enc" \
-            -pass env:IOS_SIGNING_KEY_PASSWORD
-          rm -f "$OUT/distribution-private-key.pem"
-          cat > "$OUT/NEXT-STEPS.txt" <<'TXT'
-          1. Apple Developer -> Certificates -> + -> Apple Distribution.
-          2. Upload autosaleumar-app.certSigningRequest.
-          3. Create an App Store Connect provisioning profile for com.autosaleumar.app using that certificate.
-          4. Upload distribution-private-key.enc and autosaleumar-app.mobileprovision to Signing/ in the PRIVATE repository.
-          5. Run this workflow again with task=testflight.
-          TXT
-      - uses: actions/upload-artifact@v4
-        with:
-          name: AutoSaleUmar-Distribution-CSR
-          path: ${{ runner.temp }}/signing-output
-          retention-days: 30
 
   release:
     needs: [apply-update]
@@ -250,18 +209,44 @@ jobs:
           APPLE_ID_EMAIL: ${{ secrets.APPLE_ID_EMAIL }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           IOS_SIGNING_KEY_PASSWORD: ${{ secrets.IOS_SIGNING_KEY_PASSWORD }}
+          IOS_DISTRIBUTION_PRIVATE_KEY_B64: ${{ secrets.IOS_DISTRIBUTION_PRIVATE_KEY_B64 }}
+          IOS_APP_STORE_PROFILE_B64: ${{ secrets.IOS_APP_STORE_PROFILE_B64 }}
         run: |
           set -euo pipefail
-          for name in APPLE_TEAM_ID APPLE_ID_EMAIL APPLE_APP_SPECIFIC_PASSWORD IOS_SIGNING_KEY_PASSWORD; do
+          for name in APPLE_TEAM_ID APPLE_ID_EMAIL APPLE_APP_SPECIFIC_PASSWORD IOS_SIGNING_KEY_PASSWORD IOS_DISTRIBUTION_PRIVATE_KEY_B64 IOS_APP_STORE_PROFILE_B64; do
             if [ -z "${!name:-}" ]; then
               echo "Missing GitHub secret: $name"
               exit 1
             fi
           done
-          test -f Signing/distribution-private-key.enc || { echo 'Missing Signing/distribution-private-key.enc'; exit 1; }
-          PROFILE_PATH=$(find Signing -maxdepth 1 -name '*.mobileprovision' -print -quit)
-          test -n "$PROFILE_PATH" || { echo 'No App Store .mobileprovision in Signing/'; exit 1; }
-          echo "PROFILE_PATH=$PROFILE_PATH" >> "$GITHUB_ENV"
+
+      - name: Materialize signing assets from GitHub Secrets
+        env:
+          IOS_DISTRIBUTION_PRIVATE_KEY_B64: ${{ secrets.IOS_DISTRIBUTION_PRIVATE_KEY_B64 }}
+          IOS_APP_STORE_PROFILE_B64: ${{ secrets.IOS_APP_STORE_PROFILE_B64 }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          def decode_secret(name: str, destination: str) -> None:
+              value = os.environ.get(name, '').strip()
+              if not value:
+                  raise SystemExit(f'Missing GitHub secret: {name}')
+              try:
+                  data = base64.b64decode(value, validate=True)
+              except Exception as exc:
+                  raise SystemExit(f'Invalid base64 in {name}: {exc}')
+              Path(destination).write_bytes(data)
+              os.chmod(destination, 0o600)
+
+          decode_secret('IOS_DISTRIBUTION_PRIVATE_KEY_B64', os.environ['RUNNER_TEMP'] + '/distribution-private-key.enc')
+          decode_secret('IOS_APP_STORE_PROFILE_B64', os.environ['RUNNER_TEMP'] + '/autosaleumar-app.mobileprovision')
+          PY
+          echo "SIGNING_KEY_PATH=$RUNNER_TEMP/distribution-private-key.enc" >> "$GITHUB_ENV"
+          echo "PROFILE_PATH=$RUNNER_TEMP/autosaleumar-app.mobileprovision" >> "$GITHUB_ENV"
 
       - name: Install XcodeGen and generate project
         run: |
@@ -294,7 +279,7 @@ jobs:
           P12_PASSWORD="asu-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
           openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
-            -in "$GITHUB_WORKSPACE/Signing/distribution-private-key.enc" \
+            -in "$SIGNING_KEY_PATH" \
             -out "$PRIVATE_KEY" -pass env:IOS_SIGNING_KEY_PASSWORD
 
           security cms -D -i "$PROFILE_PATH" > "$RUNNER_TEMP/profile.plist"
