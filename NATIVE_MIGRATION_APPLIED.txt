@@ -1,0 +1,1 @@
+Auto Sale Umar mobile architecture migrated from React Native/Metro to SwiftUI/XcodeGen/TestFlight pipeline.

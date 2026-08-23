@@ -1,36 +1,35 @@
-# Auto Sale Umar — iOS mobile client
+# Auto Sale Umar — native iOS
 
-Clean bare React Native iOS application. Expo and EAS are intentionally not used.
+The React Native / Metro layer has been removed. The app is now a SwiftUI iPhone application with a native WKWebView shell around `https://autosaleumar.com`, native settings, native SF Symbols and a native bottom navigation layer.
 
 ## Architecture
 
-- React Native 0.87
-- React 19.2.3
-- Native Xcode project committed in `ios/`
-- `react-native-webview` for `https://autosaleumar.com`
+- SwiftUI + WKWebView
+- iOS 17 minimum; iOS 26 Liquid Glass when available
+- XcodeGen project generation (`project.yml`)
 - Bundle ID: `com.autosaleumar.app`
-- One GitHub Actions workflow: `.github/workflows/apply-mobile-update.yml`
-- No App Store Connect is required for the registered-device Debug IPA flow
+- Xcode 26 / macOS 26 GitHub runner
+- Simulator compile gate before release
+- App Store distribution signing and direct TestFlight upload
+- No React Native, npm, CocoaPods, Metro or Cloudflare Quick Tunnel in the mobile repository
 
-## GitHub Actions
+The public website/backend can still remain on Cloudflare; this repository no longer needs Cloudflare for the mobile development/runtime layer.
 
-Open **Actions → Auto Sale Umar Mobile CI → Run workflow** and choose a task:
+## TestFlight
 
-- `validate` — npm dependency tree + repository check + TypeScript
-- `ios-compile` — npm + CocoaPods + unsigned iOS Simulator Xcode compilation on `macos-26`
-- `signing-csr` — creates a certificate signing request and private key artifact
-- `debug-ipa` — builds a signed Debug IPA for an Apple Development provisioning profile
-- `metro` — starts Metro plus an HTTPS Quick Tunnel for Fast Refresh
+1. Configure repository secrets:
+   - `APPLE_TEAM_ID`
+   - `APPLE_ID_EMAIL`
+   - `APPLE_APP_SPECIFIC_PASSWORD`
+   - `IOS_SIGNING_KEY_PASSWORD`
+2. Put the encrypted Apple Distribution private key at `Signing/distribution-private-key.enc`.
+3. Put an App Store Connect provisioning profile for `com.autosaleumar.app` in `Signing/`.
+4. Run **Build Auto Sale Umar / TestFlight** with `upload_to_testflight = true`.
 
-Uploading `mobile-update.zip` to the repository root automatically uses the same workflow. The update is first validated on Ubuntu, then compiled with CocoaPods/Xcode on `macos-26`, and is committed only after both gates pass. Update ZIPs are not allowed to modify `.github` or `.git`.
+If Auto Sale Umar and Lattice use the same Apple Developer team and Apple Distribution certificate, the same encrypted distribution private key can be reused. The provisioning profile must still be created specifically for `com.autosaleumar.app` and must include that same distribution certificate.
 
-## Apple signing secrets
+Set repository variable `AUTO_TESTFLIGHT=true` if every verified source update should automatically become a TestFlight build.
 
-Configure these only after `validate` and `ios-compile` are green:
+## ZIP updates
 
-- `APPLE_TEAM_ID`
-- `IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64`
-- `IOS_DEVELOPMENT_CERTIFICATE_PASSWORD`
-- `IOS_DEVELOPMENT_PROFILE_BASE64`
-
-The profile must be an **iOS App Development** provisioning profile for `com.autosaleumar.app` and must include the test iPhone UDID.
+Future source patches can be uploaded to repository root using the name `autosaleumar-ios-*.zip`. The apply workflow extracts the patch, generates the Xcode project, compiles an unsigned iOS Simulator build, and only commits the patch after the Xcode gate passes.
