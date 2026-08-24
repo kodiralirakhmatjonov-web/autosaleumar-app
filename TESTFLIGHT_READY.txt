@@ -1,0 +1,12 @@
+AUTO SALE UMAR — TESTFLIGHT READY PATCH
+
+Production native pipeline:
+mobile-update.zip -> safe apply -> XcodeGen -> Simulator compile gate -> verified commit -> signed Release archive -> IPA validation -> TestFlight.
+
+Required repository variable:
+AUTO_TESTFLIGHT=true
+
+Release bundle id:
+com.autosaleumar.app
+
+Signing files stay out of the public repository and are reconstructed only from GitHub Actions Secrets.

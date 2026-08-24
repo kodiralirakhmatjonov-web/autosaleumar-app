@@ -21,6 +21,8 @@ targets:
       - path: Sources
       - path: Resources/Assets.xcassets
         buildPhase: resources
+      - path: Resources/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.autosaleumar.app
