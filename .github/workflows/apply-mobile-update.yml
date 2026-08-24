@@ -273,44 +273,73 @@ jobs:
           APPLE_ID_EMAIL: ${{ secrets.APPLE_ID_EMAIL }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           IOS_SIGNING_KEY_PASSWORD: ${{ secrets.IOS_SIGNING_KEY_PASSWORD }}
+          IOS_CSR_KEY_PASSWORD: ${{ secrets.IOS_CSR_KEY_PASSWORD }}
           IOS_DISTRIBUTION_PRIVATE_KEY_B64: ${{ secrets.IOS_DISTRIBUTION_PRIVATE_KEY_B64 }}
+          IOS_PRIVATE_KEY_ENC_BASE64: ${{ secrets.IOS_PRIVATE_KEY_ENC_BASE64 }}
           IOS_APP_STORE_PROFILE_B64: ${{ secrets.IOS_APP_STORE_PROFILE_B64 }}
         run: |
           set -euo pipefail
-          for name in APPLE_TEAM_ID APPLE_ID_EMAIL APPLE_APP_SPECIFIC_PASSWORD IOS_SIGNING_KEY_PASSWORD IOS_DISTRIBUTION_PRIVATE_KEY_B64 IOS_APP_STORE_PROFILE_B64; do
+
+          for name in APPLE_TEAM_ID APPLE_ID_EMAIL APPLE_APP_SPECIFIC_PASSWORD IOS_APP_STORE_PROFILE_B64; do
             if [ -z "${!name:-}" ]; then
               echo "Missing GitHub secret: $name"
               exit 1
             fi
           done
 
+          if [ -z "${IOS_DISTRIBUTION_PRIVATE_KEY_B64:-}" ] && [ -z "${IOS_PRIVATE_KEY_ENC_BASE64:-}" ]; then
+            echo 'Missing encrypted signing key. Configure IOS_DISTRIBUTION_PRIVATE_KEY_B64 or IOS_PRIVATE_KEY_ENC_BASE64.'
+            exit 1
+          fi
+
+          if [ -z "${IOS_SIGNING_KEY_PASSWORD:-}" ] && [ -z "${IOS_CSR_KEY_PASSWORD:-}" ]; then
+            echo 'Missing signing-key password. Configure IOS_SIGNING_KEY_PASSWORD or IOS_CSR_KEY_PASSWORD.'
+            exit 1
+          fi
+
       - name: Materialize signing assets from GitHub Secrets
         env:
           IOS_DISTRIBUTION_PRIVATE_KEY_B64: ${{ secrets.IOS_DISTRIBUTION_PRIVATE_KEY_B64 }}
+          IOS_PRIVATE_KEY_ENC_BASE64: ${{ secrets.IOS_PRIVATE_KEY_ENC_BASE64 }}
           IOS_APP_STORE_PROFILE_B64: ${{ secrets.IOS_APP_STORE_PROFILE_B64 }}
         run: |
           set -euo pipefail
+          umask 077
+
           python3 - <<'PY'
           import base64
           import os
           from pathlib import Path
 
-          def decode_secret(name: str, destination: str) -> None:
+          temp = Path(os.environ['RUNNER_TEMP'])
+
+          def decode(name: str, destination: Path, required: bool = False) -> bool:
               value = os.environ.get(name, '').strip()
               if not value:
-                  raise SystemExit(f'Missing GitHub secret: {name}')
+                  if required:
+                      raise SystemExit(f'Missing GitHub secret: {name}')
+                  return False
               try:
                   data = base64.b64decode(value, validate=True)
               except Exception as exc:
                   raise SystemExit(f'Invalid base64 in {name}: {exc}')
-              Path(destination).write_bytes(data)
-              os.chmod(destination, 0o600)
+              destination.write_bytes(data)
+              destination.chmod(0o600)
+              print(f'Materialized {name}: {len(data)} bytes')
+              return True
 
-          decode_secret('IOS_DISTRIBUTION_PRIVATE_KEY_B64', os.environ['RUNNER_TEMP'] + '/distribution-private-key.enc')
-          decode_secret('IOS_APP_STORE_PROFILE_B64', os.environ['RUNNER_TEMP'] + '/autosaleumar-app.mobileprovision')
+          decode('IOS_APP_STORE_PROFILE_B64', temp / 'autosaleumar-app.mobileprovision', required=True)
+          decode('IOS_DISTRIBUTION_PRIVATE_KEY_B64', temp / 'distribution-private-key.enc')
+          decode('IOS_PRIVATE_KEY_ENC_BASE64', temp / 'legacy-private-key.enc')
           PY
-          echo "SIGNING_KEY_PATH=$RUNNER_TEMP/distribution-private-key.enc" >> "$GITHUB_ENV"
+
           echo "PROFILE_PATH=$RUNNER_TEMP/autosaleumar-app.mobileprovision" >> "$GITHUB_ENV"
+          if [ -f "$RUNNER_TEMP/distribution-private-key.enc" ]; then
+            echo "DIST_KEY_PATH=$RUNNER_TEMP/distribution-private-key.enc" >> "$GITHUB_ENV"
+          fi
+          if [ -f "$RUNNER_TEMP/legacy-private-key.enc" ]; then
+            echo "LEGACY_KEY_PATH=$RUNNER_TEMP/legacy-private-key.enc" >> "$GITHUB_ENV"
+          fi
 
       - name: Install XcodeGen and generate project
         run: |
@@ -333,55 +362,168 @@ jobs:
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           IOS_SIGNING_KEY_PASSWORD: ${{ secrets.IOS_SIGNING_KEY_PASSWORD }}
+          IOS_CSR_KEY_PASSWORD: ${{ secrets.IOS_CSR_KEY_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
+          umask 077
+
           PRIVATE_KEY="$RUNNER_TEMP/distribution-private-key.pem"
           CERT_PEM="$RUNNER_TEMP/distribution-certificate.pem"
           P12_PATH="$RUNNER_TEMP/distribution.p12"
           KEYCHAIN_PATH="$RUNNER_TEMP/autosaleumar-signing.keychain-db"
           P12_PASSWORD="asu-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
-          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
-            -in "$SIGNING_KEY_PATH" \
-            -out "$PRIVATE_KEY" -pass env:IOS_SIGNING_KEY_PASSWORD
+          # Auto Sale Umar has had two encrypted-key formats during setup:
+          #  - Distribution bootstrap: PBKDF2 / 200000 / IOS_SIGNING_KEY_PASSWORD
+          #  - Original CSR bootstrap: PBKDF2 / 300000 / SHA-256 / IOS_CSR_KEY_PASSWORD
+          # Try both known formats and both stored key slots, then validate the restored PEM.
+          decrypt_key() {
+            local label="$1"
+            local encrypted_path="$2"
+            local password="$3"
+            local iterations="$4"
+
+            [ -n "$encrypted_path" ] || return 1
+            [ -f "$encrypted_path" ] || return 1
+            [ -n "$password" ] || return 1
+
+            rm -f "$PRIVATE_KEY"
+            if KEY_PASSWORD="$password" openssl enc \
+              -d \
+              -aes-256-cbc \
+              -pbkdf2 \
+              -iter "$iterations" \
+              -md sha256 \
+              -in "$encrypted_path" \
+              -out "$PRIVATE_KEY" \
+              -pass env:KEY_PASSWORD 2>/dev/null; then
+              if openssl pkey -in "$PRIVATE_KEY" -noout >/dev/null 2>&1; then
+                echo "Signing private key restored with compatible format: $label"
+                return 0
+              fi
+            fi
+            rm -f "$PRIVATE_KEY"
+            return 1
+          }
+
+          KEY_READY=0
+          if decrypt_key 'distribution key / signing password / 200k' "${DIST_KEY_PATH:-}" "${IOS_SIGNING_KEY_PASSWORD:-}" 200000; then KEY_READY=1; fi
+          if [ "$KEY_READY" -eq 0 ] && decrypt_key 'distribution key / CSR password / 300k' "${DIST_KEY_PATH:-}" "${IOS_CSR_KEY_PASSWORD:-}" 300000; then KEY_READY=1; fi
+          if [ "$KEY_READY" -eq 0 ] && decrypt_key 'legacy key / CSR password / 300k' "${LEGACY_KEY_PATH:-}" "${IOS_CSR_KEY_PASSWORD:-}" 300000; then KEY_READY=1; fi
+          if [ "$KEY_READY" -eq 0 ] && decrypt_key 'legacy key / signing password / 200k' "${LEGACY_KEY_PATH:-}" "${IOS_SIGNING_KEY_PASSWORD:-}" 200000; then KEY_READY=1; fi
+          if [ "$KEY_READY" -eq 0 ] && decrypt_key 'distribution key / signing password / 300k' "${DIST_KEY_PATH:-}" "${IOS_SIGNING_KEY_PASSWORD:-}" 300000; then KEY_READY=1; fi
+          if [ "$KEY_READY" -eq 0 ] && decrypt_key 'distribution key / CSR password / 200k' "${DIST_KEY_PATH:-}" "${IOS_CSR_KEY_PASSWORD:-}" 200000; then KEY_READY=1; fi
+          if [ "$KEY_READY" -eq 0 ] && decrypt_key 'legacy key / signing password / 300k' "${LEGACY_KEY_PATH:-}" "${IOS_SIGNING_KEY_PASSWORD:-}" 300000; then KEY_READY=1; fi
+          if [ "$KEY_READY" -eq 0 ] && decrypt_key 'legacy key / CSR password / 200k' "${LEGACY_KEY_PATH:-}" "${IOS_CSR_KEY_PASSWORD:-}" 200000; then KEY_READY=1; fi
+
+          if [ "$KEY_READY" -ne 1 ]; then
+            echo 'Unable to decrypt any configured iOS signing private key.'
+            echo 'The encrypted key and password secret do not belong to the same CSR/signing setup.'
+            exit 1
+          fi
 
           security cms -D -i "$PROFILE_PATH" > "$RUNNER_TEMP/profile.plist"
+
           PROFILE_TEAM=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$RUNNER_TEMP/profile.plist")
           APP_IDENTIFIER=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$RUNNER_TEMP/profile.plist")
-          test "$PROFILE_TEAM" = "$APPLE_TEAM_ID" || { echo "Team mismatch: $PROFILE_TEAM"; exit 1; }
+          test "$PROFILE_TEAM" = "$APPLE_TEAM_ID" || { echo "Team mismatch: profile=$PROFILE_TEAM secret=$APPLE_TEAM_ID"; exit 1; }
           test "$APP_IDENTIFIER" = "$APPLE_TEAM_ID.$BUNDLE_ID" || { echo "Bundle mismatch: $APP_IDENTIFIER"; exit 1; }
 
-          PROFILE_PLIST="$RUNNER_TEMP/profile.plist" CERT_DER="$RUNNER_TEMP/distribution-certificate.der" python3 - <<'PY'
-          import os, plistlib
+          GET_TASK_ALLOW=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:get-task-allow' "$RUNNER_TEMP/profile.plist" 2>/dev/null || echo false)
+          test "$GET_TASK_ALLOW" != 'true' || { echo 'IOS_APP_STORE_PROFILE_B64 contains a Development profile, not an App Store profile.'; exit 1; }
+
+          PROFILE_PLIST="$RUNNER_TEMP/profile.plist" CERT_DIR="$RUNNER_TEMP/profile-certs" python3 - <<'PY'
+          import os
+          import plistlib
           from pathlib import Path
-          with Path(os.environ['PROFILE_PLIST']).open('rb') as f:
+
+          profile = Path(os.environ['PROFILE_PLIST'])
+          cert_dir = Path(os.environ['CERT_DIR'])
+          cert_dir.mkdir(parents=True, exist_ok=True)
+
+          with profile.open('rb') as f:
               data = plistlib.load(f)
+
           certs = data.get('DeveloperCertificates') or []
           if not certs:
               raise SystemExit('Provisioning profile has no DeveloperCertificates')
-          Path(os.environ['CERT_DER']).write_bytes(certs[0])
+
+          for index, cert in enumerate(certs):
+              (cert_dir / f'profile-cert-{index}.der').write_bytes(bytes(cert))
+          print(f'Provisioning profile contains {len(certs)} signing certificate(s).')
           PY
-          openssl x509 -inform DER -in "$RUNNER_TEMP/distribution-certificate.der" -out "$CERT_PEM"
 
-          KEY_FP=$(openssl pkey -in "$PRIVATE_KEY" -pubout 2>/dev/null | openssl sha256)
-          CERT_FP=$(openssl x509 -in "$CERT_PEM" -pubkey -noout 2>/dev/null | openssl sha256)
-          test "$KEY_FP" = "$CERT_FP" || { echo 'Distribution key does not match profile certificate.'; exit 1; }
+          PRIVATE_PUB_SHA=$(openssl pkey -in "$PRIVATE_KEY" -pubout -outform DER 2>/dev/null | shasum -a 256 | awk '{print $1}')
+          MATCHED=0
+          for cert_der in "$RUNNER_TEMP"/profile-certs/profile-cert-*.der; do
+            cert_pem="${cert_der%.der}.pem"
+            openssl x509 -inform DER -in "$cert_der" -out "$cert_pem"
+            CERT_PUB_SHA=$(openssl x509 -in "$cert_pem" -pubkey -noout 2>/dev/null | openssl pkey -pubin -outform DER 2>/dev/null | shasum -a 256 | awk '{print $1}')
+            if [ "$PRIVATE_PUB_SHA" = "$CERT_PUB_SHA" ]; then
+              cp "$cert_pem" "$CERT_PEM"
+              MATCHED=1
+              break
+            fi
+          done
 
-          openssl pkcs12 -export -inkey "$PRIVATE_KEY" -in "$CERT_PEM" -out "$P12_PATH" \
-            -name 'Apple Distribution' -passout pass:"$P12_PASSWORD"
+          if [ "$MATCHED" -ne 1 ]; then
+            echo 'Private key decrypted successfully, but it does not match any certificate in IOS_APP_STORE_PROFILE_B64.'
+            echo 'Regenerate the App Store provisioning profile with the Distribution certificate created from this private key CSR.'
+            exit 1
+          fi
+
+          openssl x509 -in "$CERT_PEM" -checkend 0 -noout || { echo 'Apple Distribution certificate is expired.'; exit 1; }
+          echo "Matched certificate: $(openssl x509 -in "$CERT_PEM" -noout -subject)"
+
+          openssl pkcs12 \
+            -export \
+            -inkey "$PRIVATE_KEY" \
+            -in "$CERT_PEM" \
+            -out "$P12_PATH" \
+            -name 'Apple Distribution' \
+            -passout pass:"$P12_PASSWORD"
+
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security import "$P12_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain-db
-          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          ORIGINAL_KEYCHAINS=$(security list-keychains -d user | tr -d '"' | tr '\n' ' ')
+          # shellcheck disable=SC2086
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $ORIGINAL_KEYCHAINS
+
+          security import "$P12_PATH" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$P12_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH" >/dev/null
 
           PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/profile.plist")
           PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/profile.plist")
+
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+
+          SIGNING_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | grep 'Apple Distribution' \
+            | sed -n '1s/.*"\(.*\)".*/\1/p')
+
+          test -n "$SIGNING_IDENTITY" || {
+            echo 'Apple Distribution signing identity not found after Keychain import.'
+            security find-identity -v -p codesigning "$KEYCHAIN_PATH" || true
+            exit 1
+          }
+
           echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
+          echo "SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
+          echo "Installed provisioning profile: $PROFILE_NAME"
+          echo "Signing identity: $SIGNING_IDENTITY"
 
       - name: Archive signed app
         env:
