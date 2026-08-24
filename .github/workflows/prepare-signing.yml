@@ -1,0 +1,146 @@
+name: Export Existing iumrah Distribution Signing
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-existing-signing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify existing iumrah signing inputs
+        env:
+          IOS_SIGNING_KEY_PASSWORD: ${{ secrets.IOS_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$IOS_SIGNING_KEY_PASSWORD" || { echo 'Missing existing lattice-mobile secret: IOS_SIGNING_KEY_PASSWORD'; exit 1; }
+          test -f Signing/distribution-private-key.enc || { echo 'Missing Signing/distribution-private-key.enc'; exit 1; }
+          test -f Signing/iumrah-business.mobileprovision || { echo 'Missing Signing/iumrah-business.mobileprovision'; exit 1; }
+          echo 'Using the existing iumrah Distribution key and certificate. No Apple certificate is created or revoked.'
+
+      - name: Package EXISTING Apple Distribution identity for transfer
+        env:
+          IOS_SIGNING_KEY_PASSWORD: ${{ secrets.IOS_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          OUT="$RUNNER_TEMP/existing-signing-transfer"
+          mkdir -p "$OUT/profile-certs"
+
+          PRIVATE_KEY="$RUNNER_TEMP/iumrah-existing-private-key.pem"
+          PROFILE_PLIST="$RUNNER_TEMP/iumrah-profile.plist"
+          MATCHED_CERT="$RUNNER_TEMP/iumrah-existing-distribution.pem"
+          P12_PATH="$RUNNER_TEMP/iumrah-existing-distribution.p12"
+
+          # This is exactly how the working lattice-mobile TestFlight workflow decrypts the key.
+          openssl enc \
+            -d \
+            -aes-256-cbc \
+            -pbkdf2 \
+            -iter 200000 \
+            -in Signing/distribution-private-key.enc \
+            -out "$PRIVATE_KEY" \
+            -pass env:IOS_SIGNING_KEY_PASSWORD
+
+          openssl pkey -in "$PRIVATE_KEY" -noout
+
+          # Decode the existing iumrah App Store provisioning profile on Linux.
+          openssl smime \
+            -inform der \
+            -verify \
+            -noverify \
+            -in Signing/iumrah-business.mobileprovision \
+            -out "$PROFILE_PLIST" >/dev/null 2>&1
+
+          PROFILE_PLIST="$PROFILE_PLIST" CERT_DIR="$RUNNER_TEMP/existing-signing-transfer/profile-certs" python3 - <<'PY'
+          import os
+          import plistlib
+          from pathlib import Path
+
+          profile_path = Path(os.environ['PROFILE_PLIST'])
+          cert_dir = Path(os.environ['CERT_DIR'])
+
+          with profile_path.open('rb') as f:
+              profile = plistlib.load(f)
+
+          certs = profile.get('DeveloperCertificates') or []
+          if not certs:
+              raise SystemExit('iumrah provisioning profile has no DeveloperCertificates')
+
+          for index, cert in enumerate(certs):
+              (cert_dir / f'cert-{index}.der').write_bytes(bytes(cert))
+
+          print(f'Existing profile contains {len(certs)} certificate(s).')
+          PY
+
+          PRIVATE_SPKI=$(openssl pkey -in "$PRIVATE_KEY" -pubout -outform DER 2>/dev/null | sha256sum | awk '{print $1}')
+          MATCHED=0
+          for cert_der in "$OUT"/profile-certs/cert-*.der; do
+            cert_pem="${cert_der%.der}.pem"
+            openssl x509 -inform DER -in "$cert_der" -out "$cert_pem"
+            CERT_SPKI=$(openssl x509 -in "$cert_pem" -pubkey -noout 2>/dev/null | openssl pkey -pubin -outform DER 2>/dev/null | sha256sum | awk '{print $1}')
+            if [ "$PRIVATE_SPKI" = "$CERT_SPKI" ]; then
+              cp "$cert_pem" "$MATCHED_CERT"
+              MATCHED=1
+              break
+            fi
+          done
+
+          test "$MATCHED" -eq 1 || { echo 'Existing iumrah private key does not match the existing iumrah profile certificate.'; exit 1; }
+          openssl x509 -in "$MATCHED_CERT" -checkend 0 -noout
+
+          # One-time transfer password. It is stored only in the private Actions artifact below.
+          TRANSFER_PASSWORD=$(openssl rand -base64 36 | tr -d '\n')
+          test -n "$TRANSFER_PASSWORD"
+
+          openssl pkcs12 \
+            -export \
+            -inkey "$PRIVATE_KEY" \
+            -in "$MATCHED_CERT" \
+            -out "$P12_PATH" \
+            -name 'Apple Distribution' \
+            -passout pass:"$TRANSFER_PASSWORD"
+
+          # Verify the P12 before exporting it.
+          P12_PASSWORD="$TRANSFER_PASSWORD" openssl pkcs12 \
+            -in "$P12_PATH" \
+            -clcerts \
+            -nokeys \
+            -passin env:P12_PASSWORD \
+            -out "$RUNNER_TEMP/p12-check.pem"
+          openssl x509 -in "$RUNNER_TEMP/p12-check.pem" -noout -subject -serial -dates
+
+          base64 -w 0 "$P12_PATH" > "$OUT/IOS_DISTRIBUTION_P12_B64.txt"
+          printf '%s' "$TRANSFER_PASSWORD" > "$OUT/IOS_DISTRIBUTION_P12_PASSWORD.txt"
+
+          {
+            echo 'This package contains the EXISTING working iumrah Apple Distribution identity.'
+            echo 'No new Apple certificate was created.'
+            echo 'Use the two TXT values as GitHub Secrets in autosaleumar-app:'
+            echo '  IOS_DISTRIBUTION_P12_B64'
+            echo '  IOS_DISTRIBUTION_P12_PASSWORD'
+            echo
+            echo "Private/public SPKI SHA-256: $PRIVATE_SPKI"
+            echo "Certificate serial: $(openssl x509 -in "$MATCHED_CERT" -noout -serial | cut -d= -f2)"
+            echo "Certificate subject: $(openssl x509 -in "$MATCHED_CERT" -noout -subject)"
+            echo
+            echo 'After transferring the values, delete the downloaded artifact from your device.'
+          } > "$OUT/README.txt"
+
+          # Do not place plaintext private-key material in the artifact.
+          rm -f "$PRIVATE_KEY" "$MATCHED_CERT" "$P12_PATH" "$RUNNER_TEMP/p12-check.pem"
+          rm -rf "$OUT/profile-certs"
+
+      - name: Upload one-time encrypted signing transfer
+        uses: actions/upload-artifact@v4
+        with:
+          name: existing-iumrah-apple-distribution-transfer
+          path: ${{ runner.temp }}/existing-signing-transfer/
+          retention-days: 1
+          if-no-files-found: error
