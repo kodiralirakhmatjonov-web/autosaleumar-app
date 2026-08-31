@@ -1,0 +1,267 @@
+# AUTO SALE UMAR — MANUAL TESTFLIGHT ONLY
+name: Auto Sale Umar — TestFlight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: autosaleumar-testflight
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    runs-on: macos-26
+    timeout-minutes: 65
+    env:
+      SCHEME: AutoSaleUmar
+      PROJECT: AutoSaleUmar.xcodeproj
+      BUNDLE_ID: com.autosaleumar.app
+      EXPECTED_DISTRIBUTION_SPKI_SHA256: 97BC18559EBB31F3396892AFF66FDD11E3EC742B711A62E40675EB706B9E026B
+      EXPECTED_ENCRYPTED_KEY_SHA256: 56badac4feb02b416c9e9208ca21ca4beefe90d7dfac818c6c694b08d5f11bb3
+    steps:
+      - name: Checkout latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: CI revision
+        run: echo 'ASU-CI-REVISION=2026-08-31-SEPARATE-MANUAL-TESTFLIGHT'
+
+      - name: Check TestFlight requirements
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID_EMAIL: ${{ secrets.APPLE_ID_EMAIL }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          IOS_SIGNING_KEY_PASSWORD: ${{ secrets.IOS_SIGNING_KEY_PASSWORD }}
+          IOS_DISTRIBUTION_PRIVATE_KEY_B64: ${{ secrets.IOS_DISTRIBUTION_PRIVATE_KEY_B64 }}
+          IOS_APP_STORE_PROFILE_B64: ${{ secrets.IOS_APP_STORE_PROFILE_B64 }}
+        run: |
+          set -euo pipefail
+          for name in APPLE_TEAM_ID APPLE_ID_EMAIL APPLE_APP_SPECIFIC_PASSWORD IOS_DISTRIBUTION_PRIVATE_KEY_B64 IOS_APP_STORE_PROFILE_B64; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing GitHub secret: $name"
+              exit 1
+            fi
+          done
+          test -n "${IOS_SIGNING_KEY_PASSWORD:-}" || { echo 'Missing GitHub secret: IOS_SIGNING_KEY_PASSWORD'; exit 1; }
+
+      - name: Materialize existing signing assets
+        env:
+          IOS_DISTRIBUTION_PRIVATE_KEY_B64: ${{ secrets.IOS_DISTRIBUTION_PRIVATE_KEY_B64 }}
+          IOS_APP_STORE_PROFILE_B64: ${{ secrets.IOS_APP_STORE_PROFILE_B64 }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          def decode_secret(name: str, destination: str) -> None:
+              value = ''.join(os.environ.get(name, '').split())
+              if not value:
+                  raise SystemExit(f'Missing GitHub secret: {name}')
+              try:
+                  data = base64.b64decode(value, validate=True)
+              except Exception as exc:
+                  raise SystemExit(f'Invalid base64 in {name}: {exc}')
+              Path(destination).write_bytes(data)
+              os.chmod(destination, 0o600)
+
+          temp = Path(os.environ['RUNNER_TEMP'])
+          decode_secret('IOS_DISTRIBUTION_PRIVATE_KEY_B64', str(temp / 'distribution-private-key.enc'))
+          decode_secret('IOS_APP_STORE_PROFILE_B64', str(temp / 'autosaleumar-app.mobileprovision'))
+          PY
+          echo "SIGNING_KEY_PATH=$RUNNER_TEMP/distribution-private-key.enc" >> "$GITHUB_ENV"
+          echo "PROFILE_PATH=$RUNNER_TEMP/autosaleumar-app.mobileprovision" >> "$GITHUB_ENV"
+
+      - name: Install XcodeGen and generate project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Simulator build preflight
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Install EXISTING iumrah Apple Distribution keypair
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          IOS_SIGNING_KEY_PASSWORD: ${{ secrets.IOS_SIGNING_KEY_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          PRIVATE_KEY="$RUNNER_TEMP/distribution-private-key.pem"
+          CERT_DER="$RUNNER_TEMP/distribution-certificate.der"
+          CERT_PEM="$RUNNER_TEMP/distribution-certificate.pem"
+          P12_PATH="$RUNNER_TEMP/distribution.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/autosaleumar-signing.keychain-db"
+          P12_PASSWORD="asu-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          # Require the exact encrypted Distribution key already proven by the
+          # working iumrah Business TestFlight pipeline. No new Apple keypair.
+          ACTUAL_KEY_SHA256=$(shasum -a 256 "$SIGNING_KEY_PATH" | awk '{print $1}')
+          if [ "$ACTUAL_KEY_SHA256" != "$EXPECTED_ENCRYPTED_KEY_SHA256" ]; then
+            echo "IOS_DISTRIBUTION_PRIVATE_KEY_B64 is not the proven existing iumrah Business encrypted key."
+            echo "Expected encrypted-key SHA256: $EXPECTED_ENCRYPTED_KEY_SHA256"
+            echo "Actual encrypted-key SHA256:   $ACTUAL_KEY_SHA256"
+            exit 1
+          fi
+
+          # Exact decryption used by the WORKING lattice-mobile TestFlight workflow:
+          # OpenSSL AES-256-CBC + PBKDF2 + 200000 iterations + IOS_SIGNING_KEY_PASSWORD.
+          # No alternate key, no CSR password, no certificate generation.
+          if ! openssl enc \
+            -d \
+            -aes-256-cbc \
+            -pbkdf2 \
+            -iter 200000 \
+            -in "$SIGNING_KEY_PATH" \
+            -out "$PRIVATE_KEY" \
+            -pass env:IOS_SIGNING_KEY_PASSWORD; then
+            echo 'IOS_SIGNING_KEY_PASSWORD in Auto Sale Umar is not the password that encrypted the working iumrah Business key.'
+            echo 'The private key file itself is verified and correct; no YAML or Apple certificate change can replace the missing encryption password.'
+            exit 1
+          fi
+          openssl pkey -in "$PRIVATE_KEY" -noout -check >/dev/null
+          echo 'Existing iumrah Distribution private key decrypted successfully.'
+
+          security cms -D -i "$PROFILE_PATH" > "$RUNNER_TEMP/profile.plist"
+          PROFILE_TEAM=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$RUNNER_TEMP/profile.plist")
+          APP_IDENTIFIER=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$RUNNER_TEMP/profile.plist")
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/profile.plist")
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/profile.plist")
+
+          test "$PROFILE_TEAM" = "$APPLE_TEAM_ID" || { echo "Team mismatch: profile=$PROFILE_TEAM expected=$APPLE_TEAM_ID"; exit 1; }
+          test "$APP_IDENTIFIER" = "$APPLE_TEAM_ID.$BUNDLE_ID" || { echo "Bundle mismatch: profile=$APP_IDENTIFIER expected=$APPLE_TEAM_ID.$BUNDLE_ID"; exit 1; }
+
+          PROFILE_PLIST="$RUNNER_TEMP/profile.plist" CERT_DER="$CERT_DER" python3 - <<'PY'
+          import os, plistlib
+          from pathlib import Path
+          with Path(os.environ['PROFILE_PLIST']).open('rb') as f:
+              data = plistlib.load(f)
+          certs = data.get('DeveloperCertificates') or []
+          if len(certs) != 1:
+              raise SystemExit(f'Expected exactly one distribution certificate in App Store profile, found {len(certs)}')
+          Path(os.environ['CERT_DER']).write_bytes(certs[0])
+          PY
+
+          openssl x509 -inform DER -in "$CERT_DER" -out "$CERT_PEM"
+          CERT_SERIAL=$(openssl x509 -in "$CERT_PEM" -noout -serial | cut -d= -f2 | tr '[:lower:]' '[:upper:]')
+          CERT_SUBJECT=$(openssl x509 -in "$CERT_PEM" -noout -subject)
+          CERT_SPKI_SHA256=$(openssl x509 -in "$CERT_PEM" -pubkey -noout 2>/dev/null | openssl pkey -pubin -outform DER 2>/dev/null | shasum -a 256 | awk '{print toupper($1)}')
+          KEY_SPKI_SHA256=$(openssl pkey -in "$PRIVATE_KEY" -pubout -outform DER 2>/dev/null | shasum -a 256 | awk '{print toupper($1)}')
+          echo "Existing profile certificate: $CERT_SUBJECT"
+          echo "Existing profile certificate serial: $CERT_SERIAL"
+          echo "Profile certificate SPKI SHA256: $CERT_SPKI_SHA256"
+          echo "Private-key SPKI SHA256:         $KEY_SPKI_SHA256"
+
+          # Apple can issue more than one Distribution certificate from the same
+          # CSR/public key. Serial numbers can therefore differ while the keypair
+          # is cryptographically identical. Match the public key, not the serial.
+          test "$CERT_SPKI_SHA256" = "$EXPECTED_DISTRIBUTION_SPKI_SHA256" || {
+            echo 'The App Store profile contains a Distribution certificate from a different keypair.'
+            echo "Expected proven public-key hash: $EXPECTED_DISTRIBUTION_SPKI_SHA256"
+            echo "Actual profile public-key hash:  $CERT_SPKI_SHA256"
+            exit 1
+          }
+          test "$KEY_SPKI_SHA256" = "$CERT_SPKI_SHA256" || {
+            echo 'The existing encrypted Distribution private key does not match the certificate in the Auto Sale Umar App Store profile.'
+            exit 1
+          }
+
+          openssl pkcs12 -export \
+            -inkey "$PRIVATE_KEY" \
+            -in "$CERT_PEM" \
+            -out "$P12_PATH" \
+            -name 'Apple Distribution' \
+            -passout pass:"$P12_PASSWORD"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$P12_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+          echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
+          echo "Existing Apple Distribution keypair verified. Certificate serial: $CERT_SERIAL"
+
+      - name: Archive signed app
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$PWD/build/AutoSaleUmar.xcarchive" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY='Apple Distribution' \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
+            CURRENT_PROJECT_VERSION="$((1000 + GITHUB_RUN_NUMBER))" \
+            archive
+
+      - name: Verify archive and export IPA
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          APP_PATH=$(find "$PWD/build/AutoSaleUmar.xcarchive/Products/Applications" -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$APP_PATH"
+          INFO_PLIST="$APP_PATH/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")" = "$BUNDLE_ID"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' "$INFO_PLIST")" = 'AppIcon'
+          test -f "$APP_PATH/Assets.car"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>provisioningProfiles</key><dict>
+              <key>${BUNDLE_ID}</key><string>${PROFILE_NAME}</string>
+            </dict>
+            <key>stripSwiftSymbols</key><true/>
+          </dict></plist>
+          PLIST
+
+          xcodebuild -exportArchive \
+            -archivePath "$PWD/build/AutoSaleUmar.xcarchive" \
+            -exportPath "$PWD/build/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+
+          IPA=$(find "$PWD/build/export" -maxdepth 1 -name '*.ipa' -print -quit)
+          test -n "$IPA"
+          echo "IPA_PATH=$IPA" >> "$GITHUB_ENV"
+
+      - name: Validate and upload to TestFlight
+        env:
+          APPLE_ID_EMAIL: ${{ secrets.APPLE_ID_EMAIL }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          set +x
+          xcrun altool --validate-app --type ios -f "$IPA_PATH" -u "$APPLE_ID_EMAIL" -p "$APPLE_APP_SPECIFIC_PASSWORD"
+          xcrun altool --upload-app --type ios -f "$IPA_PATH" -u "$APPLE_ID_EMAIL" -p "$APPLE_APP_SPECIFIC_PASSWORD"
