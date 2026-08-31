@@ -1,55 +1,29 @@
 import SwiftUI
 
 struct RootView: View {
-    @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var store: AppStore
     @State private var selection: AppTab = .home
-    @State private var webPath = "/"
     @State private var showsLaunch = true
-
-    private var activeURL: URL {
-        AppConfig.siteURL(path: webPath, language: settings.language, theme: settings.theme)
-    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
             ASUDesign.page.ignoresSafeArea()
-
             Group {
-                if selection == .settings {
-                    SettingsView { path in
-                        webPath = path
-                        withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
-                            selection = .home
-                        }
-                    }
-                } else {
-                    SiteWebView(url: activeURL)
-                        .id("\(selection.rawValue)-\(settings.language.rawValue)-\(settings.theme.rawValue)-\(webPath)")
-                        .ignoresSafeArea(edges: .bottom)
+                switch selection {
+                case .home: HomeView(selectTab: { selection = $0 })
+                case .catalog: CatalogView()
+                case .favorites: FavoritesView()
+                case .more: MoreView()
                 }
             }
-
-            LiquidGlassTabBar(selection: Binding(
-                get: { selection },
-                set: { next in
-                    if let path = next.path {
-                        webPath = path
-                    }
-                    selection = next
-                }
-            ))
-
-            if showsLaunch {
-                LaunchOverlay()
-                    .transition(.opacity)
-                    .zIndex(100)
-            }
+            .safeAreaPadding(.bottom, 78)
+            LiquidGlassTabBar(selection: $selection)
+            if showsLaunch { LaunchOverlay().transition(.opacity).zIndex(100) }
         }
+        .task { await store.loadIfNeeded() }
         .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.95) {
-                withAnimation(.easeInOut(duration: 0.32)) {
-                    showsLaunch = false
-                }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.25) {
+                withAnimation(.easeInOut(duration: 0.36)) { showsLaunch = false }
             }
         }
     }

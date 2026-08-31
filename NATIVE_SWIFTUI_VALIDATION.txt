@@ -1,0 +1,35 @@
+AUTO SALE UMAR — PURE SWIFTUI NATIVE CLIENT
+Validation: PASS
+
+Architecture
+- SwiftUI application UI only
+- No WebKit / WKWebView
+- No injected website CSS / JavaScript
+- Native NavigationStack, sheets, forms, search and tab navigation
+- iOS 17 minimum; iOS 26 Liquid Glass when available
+- HTTPS JSON client only; no direct D1/R2 connection
+
+Client surfaces
+- Native launch screen + animated in-app splash
+- Home
+- Catalog + search + filters
+- Vehicle detail + gallery + specs + share + contact sheet
+- Favorites
+- Two-car comparison
+- Personal vehicle request
+- Showroom visit booking
+- Showroom / international delivery / contacts
+- RU / Uzbek
+- System / light / dark appearance
+
+Safety
+- .github is not present in this update archive
+- Signing material is not present in this update archive
+- Existing GitHub Actions/TestFlight workflow remains untouched
+
+Static checks
+- project.yml YAML parse: PASS
+- Info.plist parse and launch configuration: PASS
+- Asset-catalog JSON parse: PASS
+- All Swift source files swiftc -parse: PASS
+- WebKit/WKWebView reference scan: PASS

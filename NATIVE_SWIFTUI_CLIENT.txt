@@ -1,0 +1,3 @@
+AUTO SALE UMAR — PURE SWIFTUI CLIENT
+No WKWebView. No website mirror. No injected web CSS/JS.
+Public product data stays server-side and is consumed through HTTPS JSON APIs.
