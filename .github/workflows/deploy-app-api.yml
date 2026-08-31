@@ -1,0 +1,183 @@
+name: Auto Sale Umar App API
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: autosaleumar-app-api-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ASU_D1_DATABASE_ID: ${{ secrets.ASU_D1_DATABASE_ID }}
+
+    steps:
+      - name: Checkout app repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify app API source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s Backend/worker.js
+          node --check Backend/worker.js
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo 'Missing app-repo secret: CLOUDFLARE_API_TOKEN'; exit 1; }
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo 'Missing app-repo secret: CLOUDFLARE_ACCOUNT_ID'; exit 1; }
+
+      - name: Resolve Auto Sale Umar D1 safely
+        id: d1
+        shell: python
+        run: |
+          import json
+          import os
+          import urllib.request
+          import urllib.error
+
+          account = os.environ['CLOUDFLARE_ACCOUNT_ID'].strip()
+          token = os.environ['CLOUDFLARE_API_TOKEN'].strip()
+          preferred = os.environ.get('ASU_D1_DATABASE_ID', '').strip()
+          api = 'https://api.cloudflare.com/client/v4'
+
+          def request(method, path, payload=None):
+              data = None if payload is None else json.dumps(payload).encode('utf-8')
+              req = urllib.request.Request(
+                  api + path,
+                  data=data,
+                  method=method,
+                  headers={
+                      'Authorization': f'Bearer {token}',
+                      'Content-Type': 'application/json',
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      result = json.load(response)
+              except urllib.error.HTTPError as exc:
+                  body = exc.read().decode('utf-8', errors='replace')
+                  raise SystemExit(f'Cloudflare API HTTP {exc.code}: {body}')
+              if not result.get('success'):
+                  raise SystemExit(f'Cloudflare API error: {result}')
+              return result.get('result')
+
+          listing = request('GET', f'/accounts/{account}/d1/database?per_page=100') or []
+          databases = [db for db in listing if isinstance(db, dict) and db.get('uuid')]
+          if not databases:
+              raise SystemExit('No D1 databases are visible to this Cloudflare token.')
+
+          if preferred:
+              matches = [db for db in databases if db.get('uuid') == preferred]
+              if len(matches) != 1:
+                  raise SystemExit('ASU_D1_DATABASE_ID does not match a D1 database visible to this token.')
+              selected = matches[0]
+          else:
+              candidates = []
+              sql = "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('cars','brands','car_media') ORDER BY name"
+              for db in databases:
+                  try:
+                      result = request('POST', f"/accounts/{account}/d1/database/{db['uuid']}/query", {'sql': sql})
+                  except SystemExit:
+                      continue
+                  rows = []
+                  if isinstance(result, list) and result:
+                      first = result[0] if isinstance(result[0], dict) else {}
+                      rows = first.get('results') or []
+                  names = {row.get('name') for row in rows if isinstance(row, dict)}
+                  if {'cars', 'brands', 'car_media'}.issubset(names):
+                      candidates.append(db)
+
+              if len(candidates) != 1:
+                  names = ', '.join(f"{db.get('name')} ({db.get('uuid')})" for db in candidates) or 'none'
+                  raise SystemExit(
+                      'Could not uniquely identify the Auto Sale Umar D1 database. '
+                      f'Candidates: {names}. Set app-repo secret ASU_D1_DATABASE_ID to the correct database UUID.'
+                  )
+              selected = candidates[0]
+
+          db_id = selected['uuid']
+          db_name = selected.get('name') or 'autosaleumar'
+          output = os.environ['GITHUB_OUTPUT']
+          with open(output, 'a', encoding='utf-8') as handle:
+              handle.write(f'database_id={db_id}\n')
+              handle.write(f'database_name={db_name}\n')
+          print(f"Resolved D1: {db_name} ({db_id})")
+
+      - name: Create isolated Worker config
+        shell: bash
+        env:
+          D1_ID: ${{ steps.d1.outputs.database_id }}
+          D1_NAME: ${{ steps.d1.outputs.database_name }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/asu-app-api-wrangler.toml" <<CFG
+          name = "autosaleumar-app-api"
+          main = "$GITHUB_WORKSPACE/Backend/worker.js"
+          compatibility_date = "2026-08-31"
+          workers_dev = true
+
+          [[d1_databases]]
+          binding = "DB"
+          database_name = "$D1_NAME"
+          database_id = "$D1_ID"
+
+          [[routes]]
+          pattern = "app-api.autosaleumar.com"
+          custom_domain = true
+          CFG
+
+      - name: Deploy app-only read API
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 deploy --config "$RUNNER_TEMP/asu-app-api-wrangler.toml"
+
+      - name: Verify production app API
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            if curl -fsS --max-time 15 https://app-api.autosaleumar.com/v1/health | grep -q '"success":true'; then
+              break
+            fi
+            if [ "$attempt" -eq 20 ]; then
+              echo 'app-api.autosaleumar.com did not become healthy in time.'
+              exit 1
+            fi
+            sleep 3
+          done
+          curl -fsS --max-time 20 https://app-api.autosaleumar.com/v1/cars > "$RUNNER_TEMP/catalog.json"
+          python3 - <<'PY'
+          import json, os
+          p = os.path.join(os.environ['RUNNER_TEMP'], 'catalog.json')
+          data = json.load(open(p, encoding='utf-8'))
+          assert data.get('success') is True
+          assert isinstance(data.get('cars'), list)
+          print('Published cars:', len(data['cars']))
+          PY
+
+      - name: Summary
+        shell: bash
+        run: |
+          {
+            echo '## Auto Sale Umar app API deployed'
+            echo
+            echo '**Website repository:** untouched'
+            echo
+            echo '**App API:** https://app-api.autosaleumar.com'
+            echo
+            echo '**Health:** https://app-api.autosaleumar.com/v1/health'
+            echo
+            echo '**Catalog:** https://app-api.autosaleumar.com/v1/cars'
+          } >> "$GITHUB_STEP_SUMMARY"
