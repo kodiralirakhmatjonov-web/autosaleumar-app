@@ -1,6 +1,6 @@
 import Foundation
 
-enum CarStatus: String, Codable, CaseIterable, Identifiable, Hashable {
+enum CarStatus: String, Codable, CaseIterable, Hashable {
     case inStock = "in_stock"
     case inShowroom = "in_showroom"
     case inTransit = "in_transit"
@@ -9,7 +9,13 @@ enum CarStatus: String, Codable, CaseIterable, Identifiable, Hashable {
     case sold
     case hidden
     case unknown
-    var id: String { rawValue }
+
+    var isAvailable: Bool {
+        switch self {
+        case .inStock, .inShowroom, .inTransit, .madeToOrder: return true
+        default: return false
+        }
+    }
 
     func title(_ language: AppLanguage) -> String {
         switch self {
@@ -17,69 +23,62 @@ enum CarStatus: String, Codable, CaseIterable, Identifiable, Hashable {
         case .inShowroom: return L10n.t("В шоуруме", "Shourumda", language)
         case .inTransit: return L10n.t("В пути", "Yo‘lda", language)
         case .madeToOrder: return L10n.t("Под заказ", "Buyurtma", language)
-        case .reserved: return L10n.t("Резерв", "Band qilingan", language)
-        case .sold: return L10n.t("Продано", "Sotilgan", language)
-        case .hidden: return L10n.t("Скрыто", "Yashirin", language)
+        case .reserved: return L10n.t("Зарезервирован", "Band qilingan", language)
+        case .sold: return L10n.t("Продан", "Sotilgan", language)
+        case .hidden: return L10n.t("Скрыт", "Yashirilgan", language)
         case .unknown: return L10n.t("Статус", "Holat", language)
         }
     }
-
-    var isAvailable: Bool { self == .inStock || self == .inShowroom }
 }
 
 struct Car: Identifiable, Codable, Hashable {
-    var id: Int
-    var slug: String?
-    var brand: String
-    var model: String
-    var year: Int?
-    var trim: String?
-    var vin: String?
-    var stockNumber: String?
-    var status: CarStatus
-    var countryCode: String?
-    var arrivalDate: String?
-    var price: Int64?
-    var currency: String
-    var priceOnRequest: Bool
-    var mileageKm: Int?
-    var bodyType: String?
-    var fuelType: String?
-    var driveType: String?
-    var transmission: String?
-    var engineText: String?
-    var seats: Int?
-    var exteriorColor: String?
-    var interiorColor: String?
-    var shortDescriptionRu: String?
-    var shortDescriptionUz: String?
-    var descriptionRu: String?
-    var descriptionUz: String?
-    var isNew: Bool
-    var isNewArrival: Bool
-    var isPublic: Bool
-    var isFeatured: Bool
-    var coverURL: URL?
-    var imageURLs: [URL]
-    var updatedAt: String?
+    let id: Int
+    let slug: String?
+    let brand: String
+    let model: String
+    let year: Int?
+    let trim: String?
+    let vin: String?
+    let stockNumber: String?
+    let status: CarStatus
+    let countryCode: String?
+    let arrivalDate: String?
+    let price: Int64?
+    let currency: String
+    let priceOnRequest: Bool
+    let mileageKm: Int?
+    let engineText: String?
+    let fuelType: String?
+    let driveType: String?
+    let transmission: String?
+    let seats: Int?
+    let exteriorColor: String?
+    let interiorColor: String?
+    let shortDescriptionRu: String?
+    let shortDescriptionUz: String?
+    let descriptionRu: String?
+    let descriptionUz: String?
+    let isNew: Bool
+    let isNewArrival: Bool
+    let isPublic: Bool
+    let isFeatured: Bool
+    let coverURL: URL?
+    let imageURLs: [URL]
+    let updatedAt: String?
 
     var displayName: String { "\(brand) \(model)" }
-    func localizedShort(_ language: AppLanguage) -> String? { language == .ru ? shortDescriptionRu : shortDescriptionUz }
-    func localizedDescription(_ language: AppLanguage) -> String? { language == .ru ? descriptionRu : descriptionUz }
+
+    func description(_ language: AppLanguage) -> String? {
+        switch language {
+        case .ru: return descriptionRu ?? shortDescriptionRu
+        case .uz: return descriptionUz ?? shortDescriptionUz ?? descriptionRu ?? shortDescriptionRu
+        }
+    }
 }
 
-enum CatalogState: Equatable { case idle, loading, loaded, unavailable(String) }
-
-enum ContactPreference: String, CaseIterable, Identifiable, Codable {
-    case whatsapp = "WhatsApp", telegram = "Telegram", call = "Call"
-    var id: String { rawValue }
-}
-
-struct ClientRequest: Identifiable, Codable, Hashable {
-    enum Kind: String, Codable { case vehicle, visit }
-    var id: UUID
-    var kind: Kind
-    var title: String
-    var detail: String
-    var createdAt: Date
+enum CatalogState: Equatable {
+    case idle
+    case loading
+    case loaded
+    case unavailable(String)
 }
