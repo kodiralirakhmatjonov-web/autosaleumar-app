@@ -45,10 +45,10 @@ struct CarDetailView: View {
 
     private var gallery: some View {
         TabView {
-            if car.imageURLs.isEmpty {
-                CarImage(url: car.coverURL, height: 330)
+            if car.galleryImageURLs.isEmpty {
+                CarImage(url: car.primaryImageURL, height: 330)
             } else {
-                ForEach(car.imageURLs, id: \.self) { url in CarImage(url: url, height: 330) }
+                ForEach(car.galleryImageURLs, id: \.self) { url in CarImage(url: url, height: 330) }
             }
         }
         .frame(height: 330)

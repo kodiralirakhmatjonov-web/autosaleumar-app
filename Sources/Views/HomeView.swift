@@ -38,7 +38,7 @@ struct HomeView: View {
             NavigationLink(value: car.id) {
                 VStack(spacing: 0) {
                     ZStack(alignment: .topLeading) {
-                        CarImage(url: car.coverURL, height: 272)
+                        CarImage(url: car.primaryImageURL, height: 272)
                         StatusPill(status: car.status, language: settings.language)
                             .padding(16)
                     }
@@ -47,9 +47,11 @@ struct HomeView: View {
                             Text(car.displayName)
                                 .font(.system(size: 28, weight: .bold, design: .rounded))
                                 .tracking(-0.75)
+                                .lineLimit(2)
                             Text(Format.price(car, language: settings.language))
                                 .font(.system(size: 20, weight: .semibold, design: .rounded))
                                 .foregroundStyle(.secondary)
+                                .lineLimit(1)
                         }
                         Spacer()
                         ASUGlassSurface(radius: 20) {
@@ -136,8 +138,11 @@ struct HomeView: View {
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: 12) {
                         ForEach(Array(store.cars.prefix(6))) { car in
-                            NavigationLink(value: car.id) { CarCard(car: car).frame(width: 212) }
-                                .buttonStyle(.plain)
+                            NavigationLink(value: car.id) {
+                                CarCard(car: car)
+                                    .frame(width: 220)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.horizontal, ASUDesign.pagePadding)

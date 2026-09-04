@@ -1,20 +1,9 @@
-AUTO SALE UMAR — NATIVE APP UPDATE VALIDATION
-2026-08-31
+AUTO SALE UMAR APP PATCH
 
-FIXED FROM GITHUB RUN 90434484212
-- APIClient.swift line 97: nil-coalescing/comparison precedence corrected.
-  priceOnRequest: payload.priceOnRequest ?? (payload.price == nil)
-- APIClient.swift line 110: nil-coalescing/comparison precedence corrected.
-  isNew: payload.isNew ?? ((payload.mileageKm ?? 0) == 0)
+Included fixes:
+1. Catalog card layout normalized to a single consistent height.
+2. Image URL normalization improved (spaces / relative paths / malformed bucket URLs are sanitized before loading).
+3. Home hero and detail gallery now use the first valid gallery image fallback.
+4. App icon asset replaced with the provided ASU logo.
 
-CHECKS PERFORMED
-- Parsed uploaded GitHub Actions logs: only two unique compiler errors, both in APIClient.swift.
-- APIClient + Car model + AppConfig typechecked with Swift 6.2.1: PASS.
-- All 21 Swift source files parsed with Swift 6.2.1: PASS.
-- Duplicate Swift type declaration scan: PASS (0 duplicates).
-- Backend/worker.js syntax check with Node: PASS.
-- DELETE.txt intentionally replaces Sources atomically; .github and Signing are not touched.
-- ZIP integrity and safe path scan: PASS.
-
-NOTE
-A true iOS/SwiftUI SDK build requires Xcode/iOS SDK on macOS. The repository's existing Xcode compile gate remains the authoritative full-platform build test.
+Apply this ZIP only to the Auto Sale Umar app repository root as mobile-update.zip.

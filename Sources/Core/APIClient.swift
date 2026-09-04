@@ -76,9 +76,8 @@ struct APIClient {
                 let status = CarStatus(rawValue: payload.status) ?? .unknown
                 guard payload.isPublic ?? true, status != .hidden else { return nil }
 
-                let cover = absoluteURL(payload.coverUrl)
-                var imageURLs = (payload.images ?? []).compactMap(absoluteURL)
-                if let cover, !imageURLs.contains(cover) { imageURLs.insert(cover, at: 0) }
+                let cover = normalizedRemoteURL(payload.coverUrl)
+                let images = deduplicatedURLs(from: payload.images, cover: cover)
 
                 return Car(
                     id: payload.id,
@@ -112,7 +111,7 @@ struct APIClient {
                     isPublic: payload.isPublic ?? true,
                     isFeatured: payload.isFeatured ?? false,
                     coverURL: cover,
-                    imageURLs: imageURLs,
+                    imageURLs: images,
                     updatedAt: payload.updatedAt
                 )
             }
@@ -125,9 +124,48 @@ struct APIClient {
         }
     }
 
-    private func absoluteURL(_ raw: String?) -> URL? {
-        guard let raw, !raw.isEmpty else { return nil }
-        if let url = URL(string: raw), url.scheme != nil { return url }
-        return URL(string: raw, relativeTo: AppConfig.website)?.absoluteURL
+    private func deduplicatedURLs(from rawItems: [String]?, cover: URL?) -> [URL] {
+        var seen = Set<String>()
+        var urls: [URL] = []
+
+        if let cover {
+            let key = cover.absoluteString
+            if seen.insert(key).inserted { urls.append(cover) }
+        }
+
+        for raw in rawItems ?? [] {
+            guard let url = normalizedRemoteURL(raw) else { continue }
+            let key = url.absoluteString
+            if seen.insert(key).inserted { urls.append(url) }
+        }
+
+        return urls
+    }
+
+    private func normalizedRemoteURL(_ raw: String?) -> URL? {
+        guard var value = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
+
+        value = value.replacingOccurrences(of: "\\", with: "/")
+        if value.hasPrefix("//") {
+            value = "https:\(value)"
+        }
+
+        if let direct = URL(string: value), direct.scheme != nil {
+            return direct
+        }
+
+        let encoded = encodeURLString(value)
+        if let direct = URL(string: encoded), direct.scheme != nil {
+            return direct
+        }
+
+        let relative = value.hasPrefix("/") ? value : "/\(value)"
+        let encodedRelative = encodeURLString(relative)
+        return URL(string: encodedRelative, relativeTo: AppConfig.website)?.absoluteURL
+    }
+
+    private func encodeURLString(_ string: String) -> String {
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~:/?#[]@!$&'()*+,;=%")
+        return string.addingPercentEncoding(withAllowedCharacters: allowed) ?? string
     }
 }

@@ -46,6 +46,8 @@ const CAR_SELECT = `
       FROM car_media cm
       WHERE cm.car_id = c.id
         AND cm.media_type = 'image'
+        AND cm.public_url IS NOT NULL
+        AND TRIM(cm.public_url) <> ''
       ORDER BY cm.is_cover DESC, cm.sort_order ASC, cm.id ASC
       LIMIT 1
     ) AS cover_url
@@ -61,7 +63,28 @@ const CAR_SELECT = `
   )
 `;
 
+function normalizeUrl(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized.length ? normalized : null;
+}
+
+function mergeImages(coverUrl, list) {
+  const seen = new Set();
+  const result = [];
+
+  for (const raw of [coverUrl, ...(Array.isArray(list) ? list : [])]) {
+    const url = normalizeUrl(raw);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    result.push(url);
+  }
+
+  return result;
+}
+
 function toCar(row, images) {
+  const coverUrl = normalizeUrl(row.cover_url);
   return {
     id: row.id,
     slug: row.slug,
@@ -93,8 +116,8 @@ function toCar(row, images) {
     isNewArrival: row.is_new_arrival === 1,
     isPublic: row.is_public === 1,
     isFeatured: row.is_featured === 1,
-    coverUrl: row.cover_url,
-    images: images.get(row.id) || (row.cover_url ? [row.cover_url] : []),
+    coverUrl,
+    images: mergeImages(coverUrl, images.get(row.id) || []),
     updatedAt: row.updated_at,
   };
 }
@@ -128,16 +151,19 @@ async function listCars(env) {
       SELECT car_id, public_url
       FROM car_media
       WHERE media_type = 'image'
+        AND public_url IS NOT NULL
+        AND TRIM(public_url) <> ''
         AND car_id IN (${placeholders})
       ORDER BY car_id ASC, is_cover DESC, sort_order ASC, id ASC
     `).bind(...ids).all();
 
   const images = new Map();
   for (const item of mediaResult.results || []) {
-    if (!item.public_url) continue;
+    const url = normalizeUrl(item.public_url);
+    if (!url) continue;
     const carID = Number(item.car_id);
     const bucket = images.get(carID) || [];
-    if (!bucket.includes(item.public_url)) bucket.push(item.public_url);
+    if (!bucket.includes(url)) bucket.push(url);
     images.set(carID, bucket);
   }
 

@@ -6,16 +6,26 @@ struct CarImage: View {
 
     var body: some View {
         ZStack {
-            Color.primary.opacity(0.025)
+            LinearGradient(
+                colors: [Color.primary.opacity(0.025), Color.primary.opacity(0.06)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
             if let url {
-                AsyncImage(url: url, transaction: Transaction(animation: .easeInOut(duration: 0.24))) { phase in
+                AsyncImage(url: url, transaction: Transaction(animation: .easeInOut(duration: 0.22))) { phase in
                     switch phase {
                     case .success(let image):
-                        image.resizable().scaledToFit().padding(7)
+                        image
+                            .resizable()
+                            .scaledToFit()
+                            .padding(12)
                     case .failure:
                         placeholder
                     case .empty:
-                        ProgressView().controlSize(.small)
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.secondary)
                     @unknown default:
                         placeholder
                     }
@@ -26,12 +36,13 @@ struct CarImage: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: height)
+        .contentShape(Rectangle())
         .clipped()
     }
 
     private var placeholder: some View {
         Image(systemName: "car.side")
-            .font(.system(size: 48, weight: .light))
+            .font(.system(size: max(42, height * 0.28), weight: .light))
             .foregroundStyle(.tertiary)
     }
 }
@@ -48,6 +59,8 @@ struct StatusPill: View {
                 .frame(width: 6, height: 6)
             Text(status.title(language))
                 .font(.system(size: compact ? 10.5 : 12, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
         }
         .padding(.horizontal, compact ? 9 : 11)
         .frame(height: compact ? 26 : 30)
@@ -64,41 +77,63 @@ struct CarCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack(alignment: .topTrailing) {
-                CarImage(url: car.coverURL, height: 126)
+                CarImage(url: car.primaryImageURL, height: 146)
+
                 ASUGlassIconButton(
                     symbol: store.isFavorite(car) ? "heart.fill" : "heart",
-                    size: 36,
+                    size: 38,
                     fontSize: 15,
                     accessibilityLabel: L10n.t("Избранное", "Saqlangan", settings.language)
                 ) {
                     store.toggleFavorite(car)
                 }
                 .foregroundStyle(store.isFavorite(car) ? ASUDesign.orange : Color.primary)
-                .padding(9)
+                .padding(10)
             }
 
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: 9) {
                 StatusPill(status: car.status, language: settings.language, compact: true)
+
                 Text(car.displayName)
-                    .font(.system(size: 15.5, weight: .bold, design: .rounded))
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
                     .lineLimit(2)
-                HStack(spacing: 4) {
-                    if let year = car.year { Text(String(year)) }
-                    if let fuel = car.fuelType, !fuel.isEmpty { Text("·"); Text(fuel) }
-                    if let seats = car.seats { Text("·"); Text("\(seats) \(L10n.t("мест", "o‘rin", settings.language))") }
-                }
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, minHeight: 46, alignment: .topLeading)
+
+                specLine
+                    .frame(height: 18, alignment: .leading)
+
+                Spacer(minLength: 0)
+
                 Text(Format.price(car, language: settings.language))
-                    .font(.system(size: 15.5, weight: .bold, design: .rounded))
+                    .font(.system(size: 16.5, weight: .bold, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
             }
-            .padding(12)
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, minHeight: 292, alignment: .top)
         .background(ASUDesign.elevated)
-        .clipShape(RoundedRectangle(cornerRadius: 23, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 23, style: .continuous).stroke(ASUDesign.line, lineWidth: 0.7))
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(ASUDesign.line, lineWidth: 0.7)
+        )
         .shadow(color: .black.opacity(0.045), radius: 14, y: 7)
+    }
+
+    @ViewBuilder
+    private var specLine: some View {
+        HStack(spacing: 4) {
+            if let year = car.year { Text(String(year)) }
+            if let fuel = car.fuelType, !fuel.isEmpty { Text("·"); Text(fuel) }
+            if let seats = car.seats { Text("·"); Text("\(seats) \(L10n.t("мест", "o‘rin", settings.language))") }
+        }
+        .font(.system(size: 11.75, weight: .medium, design: .rounded))
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.72)
     }
 }
 

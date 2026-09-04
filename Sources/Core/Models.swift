@@ -68,6 +68,24 @@ struct Car: Identifiable, Codable, Hashable {
 
     var displayName: String { "\(brand) \(model)" }
 
+    var primaryImageURL: URL? {
+        imageURLs.first ?? coverURL
+    }
+
+    var galleryImageURLs: [URL] {
+        var seen = Set<String>()
+        var result: [URL] = []
+
+        for item in ([coverURL].compactMap { $0 } + imageURLs) {
+            let key = item.absoluteString
+            if seen.insert(key).inserted {
+                result.append(item)
+            }
+        }
+
+        return result
+    }
+
     func description(_ language: AppLanguage) -> String? {
         switch language {
         case .ru: return descriptionRu ?? shortDescriptionRu
