@@ -40,17 +40,7 @@ const CAR_SELECT = `
     c.is_new_arrival,
     c.is_published AS is_public,
     c.is_featured,
-    c.updated_at,
-    (
-      SELECT cm.public_url
-      FROM car_media cm
-      WHERE cm.car_id = c.id
-        AND cm.media_type = 'image'
-        AND cm.public_url IS NOT NULL
-        AND TRIM(cm.public_url) <> ''
-      ORDER BY cm.is_cover DESC, cm.sort_order ASC, cm.id ASC
-      LIMIT 1
-    ) AS cover_url
+    c.updated_at
   FROM cars c
   INNER JOIN brands b ON b.id = c.brand_id
   LEFT JOIN car_specs s ON s.car_id = c.id
@@ -63,28 +53,12 @@ const CAR_SELECT = `
   )
 `;
 
-function normalizeUrl(value) {
-  if (typeof value !== "string") return null;
-  const normalized = value.trim();
-  return normalized.length ? normalized : null;
+function proxyURL(origin, mediaID) {
+  return `${origin}/v1/media/${encodeURIComponent(String(mediaID))}`;
 }
 
-function mergeImages(coverUrl, list) {
-  const seen = new Set();
-  const result = [];
-
-  for (const raw of [coverUrl, ...(Array.isArray(list) ? list : [])]) {
-    const url = normalizeUrl(raw);
-    if (!url || seen.has(url)) continue;
-    seen.add(url);
-    result.push(url);
-  }
-
-  return result;
-}
-
-function toCar(row, images) {
-  const coverUrl = normalizeUrl(row.cover_url);
+function toCar(row, mediaRows, origin) {
+  const urls = mediaRows.map((item) => proxyURL(origin, item.id));
   return {
     id: row.id,
     slug: row.slug,
@@ -116,13 +90,13 @@ function toCar(row, images) {
     isNewArrival: row.is_new_arrival === 1,
     isPublic: row.is_public === 1,
     isFeatured: row.is_featured === 1,
-    coverUrl,
-    images: mergeImages(coverUrl, images.get(row.id) || []),
+    coverUrl: urls[0] || null,
+    images: urls,
     updatedAt: row.updated_at,
   };
 }
 
-async function listCars(env) {
+async function listCars(env, origin) {
   const list = await env.DB.prepare(`${CAR_SELECT}
     WHERE c.is_published = 1
       AND c.status != 'hidden'
@@ -148,26 +122,167 @@ async function listCars(env) {
   const ids = rows.map((row) => Number(row.id)).filter(Number.isFinite);
   const placeholders = ids.map((_, index) => `?${index + 1}`).join(",");
   const mediaResult = await env.DB.prepare(`
-      SELECT car_id, public_url
+      SELECT *
       FROM car_media
       WHERE media_type = 'image'
-        AND public_url IS NOT NULL
-        AND TRIM(public_url) <> ''
         AND car_id IN (${placeholders})
       ORDER BY car_id ASC, is_cover DESC, sort_order ASC, id ASC
     `).bind(...ids).all();
 
-  const images = new Map();
+  const byCar = new Map();
   for (const item of mediaResult.results || []) {
-    const url = normalizeUrl(item.public_url);
-    if (!url) continue;
     const carID = Number(item.car_id);
-    const bucket = images.get(carID) || [];
-    if (!bucket.includes(url)) bucket.push(url);
-    images.set(carID, bucket);
+    if (!Number.isFinite(carID) || item.id == null) continue;
+    const bucket = byCar.get(carID) || [];
+    bucket.push(item);
+    byCar.set(carID, bucket);
   }
 
-  return rows.map((row) => toCar(row, images));
+  return rows.map((row) => toCar(row, byCar.get(Number(row.id)) || [], origin));
+}
+
+function mediaBindings(env) {
+  return Object.entries(env)
+    .filter(([key, value]) => /^MEDIA_\d+$/.test(key) && value && typeof value.get === "function")
+    .sort(([a], [b]) => Number(a.slice(6)) - Number(b.slice(6)))
+    .map(([, value]) => value);
+}
+
+function decodeSafe(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function addKeyVariant(set, raw) {
+  if (typeof raw !== "string") return;
+  let value = raw.trim();
+  if (!value) return;
+
+  const push = (candidate) => {
+    if (typeof candidate !== "string") return;
+    let item = decodeSafe(candidate.trim()).replace(/^\/+/, "");
+    if (!item) return;
+    set.add(item);
+  };
+
+  push(value);
+
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const url = new URL(value);
+      const pathname = url.pathname || "";
+      push(pathname);
+      const segments = pathname.split("/").filter(Boolean);
+      if (segments.length > 1) push(segments.slice(1).join("/"));
+      if (segments.length > 2) push(segments.slice(2).join("/"));
+    } catch {}
+  }
+
+  for (const prefix of ["media/", "r2/", "public/", "uploads/", "images/"]) {
+    const normalized = value.replace(/^\/+/, "");
+    if (normalized.startsWith(prefix)) push(normalized.slice(prefix.length));
+  }
+}
+
+function candidateKeys(row) {
+  const keys = new Set();
+  const fields = [
+    "object_key",
+    "objectKey",
+    "r2_key",
+    "r2Key",
+    "storage_key",
+    "storageKey",
+    "file_key",
+    "fileKey",
+    "key",
+    "path",
+    "public_url",
+    "publicUrl",
+    "url",
+  ];
+  for (const field of fields) addKeyVariant(keys, row?.[field]);
+  return [...keys];
+}
+
+function contentTypeFromName(name) {
+  const lower = String(name || "").toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".avif")) return "image/avif";
+  if (lower.endsWith(".heic")) return "image/heic";
+  return "image/jpeg";
+}
+
+async function responseFromR2(object, key, request) {
+  const headers = new Headers();
+  if (object.httpMetadata?.contentType) headers.set("content-type", object.httpMetadata.contentType);
+  else headers.set("content-type", contentTypeFromName(key));
+  if (object.httpEtag) headers.set("etag", object.httpEtag);
+  headers.set("cache-control", "public, max-age=31536000, immutable");
+  headers.set("accept-ranges", "bytes");
+
+  if (request.method === "HEAD") return new Response(null, { status: 200, headers });
+  return new Response(object.body, { status: 200, headers });
+}
+
+async function serveMedia(request, env, mediaID) {
+  const id = Number(mediaID);
+  if (!Number.isInteger(id) || id <= 0) return json({ success: false, error: "Invalid media id" }, 400);
+
+  const row = await env.DB.prepare(`
+      SELECT *
+      FROM car_media
+      WHERE id = ?1
+        AND media_type = 'image'
+      LIMIT 1
+    `).bind(id).first();
+
+  if (!row) return json({ success: false, error: "Media not found" }, 404);
+
+  const publicURL = row.public_url || row.publicUrl || row.url;
+  if (typeof publicURL === "string" && /^https:\/\//i.test(publicURL.trim())) {
+    try {
+      const upstream = await fetch(publicURL.trim(), {
+        headers: { accept: "image/avif,image/webp,image/*,*/*;q=0.8" },
+        redirect: "follow",
+      });
+      const type = upstream.headers.get("content-type") || "";
+      if (upstream.ok && type.toLowerCase().startsWith("image/")) {
+        const headers = new Headers(upstream.headers);
+        headers.set("cache-control", "public, max-age=31536000, immutable");
+        if (request.method === "HEAD") return new Response(null, { status: 200, headers });
+        return new Response(upstream.body, { status: 200, headers });
+      }
+    } catch {}
+  }
+
+  const keys = candidateKeys(row);
+  const bindings = mediaBindings(env);
+
+  for (const key of keys) {
+    for (const bucket of bindings) {
+      try {
+        const object = await bucket.get(key);
+        if (object) return responseFromR2(object, key, request);
+      } catch {}
+    }
+  }
+
+  return json(
+    {
+      success: false,
+      error: "Media object not found in bound R2 buckets",
+      mediaId: id,
+      keyCandidates: keys.length,
+      bucketBindings: bindings.length,
+    },
+    404,
+  );
 }
 
 export default {
@@ -175,23 +290,39 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: { allow: "GET, OPTIONS" } });
+      return new Response(null, { status: 204, headers: { allow: "GET, HEAD, OPTIONS" } });
     }
 
-    if (request.method !== "GET") return json({ success: false, error: "Method not allowed" }, 405, { allow: "GET, OPTIONS" });
+    if (!["GET", "HEAD"].includes(request.method)) {
+      return json({ success: false, error: "Method not allowed" }, 405, { allow: "GET, HEAD, OPTIONS" });
+    }
     if (!env.DB) return json({ success: false, error: "D1 binding DB is missing" }, 500);
 
     if (url.pathname === "/health" || url.pathname === "/v1/health") {
-      return json({ success: true, service: "autosaleumar-app-api" });
+      return json({
+        success: true,
+        service: "autosaleumar-app-api",
+        r2Bindings: mediaBindings(env).length,
+      });
     }
 
     if (url.pathname === "/v1/cars") {
       try {
-        const cars = await listCars(env);
+        const cars = await listCars(env, url.origin);
         return json({ success: true, total: cars.length, cars });
       } catch (error) {
         console.error("ASU app catalog failed", error);
         return json({ success: false, error: "Catalog unavailable" }, 500);
+      }
+    }
+
+    const match = url.pathname.match(/^\/v1\/media\/(\d+)$/);
+    if (match) {
+      try {
+        return await serveMedia(request, env, match[1]);
+      } catch (error) {
+        console.error("ASU media proxy failed", error);
+        return json({ success: false, error: "Media unavailable" }, 500);
       }
     }
 

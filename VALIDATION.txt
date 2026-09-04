@@ -1,9 +1,6 @@
-AUTO SALE UMAR APP PATCH
+AUTO SALE UMAR APP — R2 MEDIA PROXY UPDATE
 
-Included fixes:
-1. Catalog card layout normalized to a single consistent height.
-2. Image URL normalization improved (spaces / relative paths / malformed bucket URLs are sanitized before loading).
-3. Home hero and detail gallery now use the first valid gallery image fallback.
-4. App icon asset replaced with the provided ASU logo.
-
-Apply this ZIP only to the Auto Sale Umar app repository root as mobile-update.zip.
+This update changes only the app repository backend worker.
+The website repository is untouched.
+The iOS UI/source is untouched.
+The app API now returns /v1/media/:id image URLs backed by existing car_media records and existing R2 buckets.
