@@ -197,3 +197,47 @@ struct RamadanGift: Decodable, Hashable, Identifiable {
         media.first(where: { $0.isCover }) ?? media.first
     }
 }
+
+struct ASUCustomerProfile: Codable, Hashable {
+    var name: String
+    var phone: String
+    var preferredChannel: ContactChannel
+
+    static let empty = ASUCustomerProfile(name: "", phone: "", preferredChannel: .whatsapp)
+}
+
+enum ASUClientActivityKind: String, Codable, Hashable {
+    case vehicleRequest
+    case showroomVisit
+}
+
+struct ASUClientActivity: Identifiable, Codable, Hashable {
+    let id: UUID
+    let kind: ASUClientActivityKind
+    let code: String
+    let title: String
+    let subtitle: String
+    let createdAt: Date
+    let scheduledDate: String?
+    let timeSlot: String?
+
+    init(
+        id: UUID = UUID(),
+        kind: ASUClientActivityKind,
+        code: String,
+        title: String,
+        subtitle: String,
+        createdAt: Date = Date(),
+        scheduledDate: String? = nil,
+        timeSlot: String? = nil
+    ) {
+        self.id = id
+        self.kind = kind
+        self.code = code
+        self.title = title
+        self.subtitle = subtitle
+        self.createdAt = createdAt
+        self.scheduledDate = scheduledDate
+        self.timeSlot = timeSlot
+    }
+}

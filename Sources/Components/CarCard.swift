@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum CatalogCardLayout: String, CaseIterable {
+enum CatalogCardLayout: String, CaseIterable, Hashable {
     case grid
     case wide
 }
@@ -47,14 +47,29 @@ struct StatusPill: View {
         }
         .padding(.horizontal, compact ? 9 : 11)
         .frame(height: compact ? 26 : 30)
-        .background(.thinMaterial, in: Capsule())
-        .overlay(Capsule().stroke(Color.white.opacity(0.22), lineWidth: 0.55))
+        .modifier(ASUStatusGlass())
+    }
+}
+
+
+private struct ASUStatusGlass: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: Capsule())
+        } else {
+            content
+                .background(.thinMaterial, in: Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.22), lineWidth: 0.55))
+        }
     }
 }
 
 struct CarCard: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var store: AppStore
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let car: Car
     var layout: CatalogCardLayout = .grid
@@ -67,6 +82,8 @@ struct CarCard: View {
             }
         }
         .contentShape(RoundedRectangle(cornerRadius: layout == .grid ? 24 : 30, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(car.displayName), \(car.status.title(settings.language)), \(Format.price(car, language: settings.language))")
     }
 
     private var gridCard: some View {
@@ -131,7 +148,7 @@ struct CarCard: View {
         .background(ASUDesign.elevated)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(ASUDesign.line, lineWidth: 0.7))
-        .shadow(color: .black.opacity(0.045), radius: 14, y: 7)
+        .shadow(color: colorScheme == .light ? .black.opacity(0.045) : .clear, radius: 14, y: 7)
     }
 
     private var wideCard: some View {
@@ -189,7 +206,7 @@ struct CarCard: View {
         .background(ASUDesign.elevated)
         .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).stroke(ASUDesign.line, lineWidth: 0.7))
-        .shadow(color: .black.opacity(0.055), radius: 18, y: 9)
+        .shadow(color: colorScheme == .light ? .black.opacity(0.055) : .clear, radius: 18, y: 9)
     }
 
     @ViewBuilder
@@ -215,7 +232,7 @@ struct CarCard: View {
 
     private func favoriteButton(size: CGFloat) -> some View {
         Button {
-            withAnimation(ASUDesign.spring) { store.toggleFavorite(car) }
+            withAnimation(reduceMotion ? nil : ASUDesign.spring) { store.toggleFavorite(car) }
         } label: {
             Image(systemName: store.isFavorite(car) ? "heart.fill" : "heart")
                 .font(.system(size: 15.5, weight: .semibold))
@@ -225,7 +242,9 @@ struct CarCard: View {
                 .modifier(ASUCardGlassCircle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(L10n.t("Избранное", "Saqlangan", settings.language))
+        .accessibilityLabel(store.isFavorite(car)
+            ? L10n.t("Удалить из избранного", "Saqlanganlardan olib tashlash", settings.language)
+            : L10n.t("Добавить в избранное", "Saqlanganlarga qo‘shish", settings.language))
     }
 }
 

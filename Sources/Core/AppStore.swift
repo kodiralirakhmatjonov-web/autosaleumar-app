@@ -13,7 +13,10 @@ final class AppStore: ObservableObject {
     @Published private(set) var catalogState: CatalogState
     @Published private(set) var favoriteIDs: Set<Int> = Persistence.favoriteIDs()
     @Published private(set) var compareIDs: [Int] = Persistence.compareIDs()
+    @Published private(set) var isRefreshing = false
+    @Published private(set) var lastUpdatedAt: Date?
     @Published var catalogIntent: CatalogIntent?
+    @Published private(set) var requestedCarSlug: String?
 
     private let api = APIClient()
     private var didLoad = false
@@ -23,6 +26,7 @@ final class AppStore: ObservableObject {
         let cached = Persistence.cachedCars()
         cars = cached
         catalogState = cached.isEmpty ? .idle : .loaded
+        lastUpdatedAt = Persistence.catalogUpdatedAt()
     }
 
     var featuredCar: Car? {
@@ -40,17 +44,55 @@ final class AppStore: ObservableObject {
     var soldCars: [Car] { cars.filter { $0.status == .sold } }
 
     func loadIfNeeded(force: Bool = false) async {
+        if isRefreshing { return }
         if didLoad && !force { return }
-        didLoad = true
+
+        isRefreshing = true
         if cars.isEmpty { catalogState = .loading }
+        defer { isRefreshing = false }
 
         do {
             let fresh = try await api.fetchPublicCars()
             cars = fresh
-            Persistence.saveCars(fresh)
             catalogState = .loaded
+            didLoad = true
+
+            let now = Date()
+            lastUpdatedAt = now
+            Persistence.saveCars(fresh)
+
+            let validIDs = Set(fresh.map(\.id))
+            let cleanedFavorites = favoriteIDs.intersection(validIDs)
+            if cleanedFavorites != favoriteIDs {
+                favoriteIDs = cleanedFavorites
+                Persistence.saveFavoriteIDs(cleanedFavorites)
+            }
+
+            let cleanedCompare = compareIDs.filter { validIDs.contains($0) }
+            if cleanedCompare != compareIDs {
+                compareIDs = cleanedCompare
+                Persistence.saveCompareIDs(cleanedCompare)
+            }
+
+            detailCache.removeAll(keepingCapacity: true)
+
+            let urls = fresh.compactMap(\.primaryImageURL)
+            ASUImagePrefetcher.prefetch(urls)
         } catch {
             catalogState = .unavailable(error.localizedDescription)
+            // Keep a cached catalog usable, but allow a future automatic retry when no data exists.
+            if cars.isEmpty { didLoad = false }
+        }
+    }
+
+    func refreshIfStale(maxAge: TimeInterval = 5 * 60) async {
+        guard !isRefreshing else { return }
+        guard let lastUpdatedAt else {
+            await loadIfNeeded(force: true)
+            return
+        }
+        if Date().timeIntervalSince(lastUpdatedAt) >= maxAge {
+            await loadIfNeeded(force: true)
         }
     }
 
@@ -68,10 +110,20 @@ final class AppStore: ObservableObject {
 
     func clearCatalogIntent() { catalogIntent = nil }
 
+    func requestCar(slug: String) {
+        let cleaned = slug.trimmingCharacters(in: .whitespacesAndNewlines)
+        requestedCarSlug = cleaned.isEmpty ? nil : cleaned
+    }
+
+    func consumeRequestedCar() {
+        requestedCarSlug = nil
+    }
+
     func toggleFavorite(_ car: Car) {
         if favoriteIDs.contains(car.id) { favoriteIDs.remove(car.id) }
         else { favoriteIDs.insert(car.id) }
         Persistence.saveFavoriteIDs(favoriteIDs)
+        ASUHaptics.selection()
     }
 
     func isFavorite(_ car: Car) -> Bool { favoriteIDs.contains(car.id) }
@@ -84,6 +136,7 @@ final class AppStore: ObservableObject {
             compareIDs.append(car.id)
         }
         Persistence.saveCompareIDs(compareIDs)
+        ASUHaptics.selection()
     }
 
     func isCompared(_ car: Car) -> Bool { compareIDs.contains(car.id) }

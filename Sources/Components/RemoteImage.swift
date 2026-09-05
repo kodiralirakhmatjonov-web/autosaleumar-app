@@ -10,6 +10,13 @@ private final class ASURemoteImageLoader: ObservableObject {
         case failed
     }
 
+    private static let memoryCache: NSCache<NSURL, UIImage> = {
+        let cache = NSCache<NSURL, UIImage>()
+        cache.countLimit = 80
+        cache.totalCostLimit = 96 * 1024 * 1024
+        return cache
+    }()
+
     @Published var state: State = .idle
     private var task: Task<Void, Never>?
     private var loadedURL: URL?
@@ -18,8 +25,14 @@ private final class ASURemoteImageLoader: ObservableObject {
         guard loadedURL != url else { return }
         task?.cancel()
         loadedURL = url
+
         guard let url else {
             state = .failed
+            return
+        }
+
+        if let image = Self.memoryCache.object(forKey: url as NSURL) {
+            state = .success(image)
             return
         }
 
@@ -29,26 +42,45 @@ private final class ASURemoteImageLoader: ObservableObject {
             request.cachePolicy = .returnCacheDataElseLoad
             request.timeoutInterval = 20
             request.setValue("image/avif,image/webp,image/*,*/*;q=0.8", forHTTPHeaderField: "Accept")
-            request.setValue("AutoSaleUmar-iOS/2.0", forHTTPHeaderField: "User-Agent")
+            request.setValue("AutoSaleUmar-iOS/4.0", forHTTPHeaderField: "User-Agent")
 
-            if let cached = URLCache.shared.cachedResponse(for: request), let image = UIImage(data: cached.data) {
+            if let cached = URLCache.shared.cachedResponse(for: request),
+               let image = UIImage(data: cached.data) {
                 guard !Task.isCancelled else { return }
+                Self.memoryCache.setObject(image, forKey: url as NSURL, cost: cached.data.count)
                 state = .success(image)
                 return
             }
 
-            do {
-                let (data, response) = try await URLSession.shared.data(for: request)
-                guard !Task.isCancelled else { return }
-                guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), let image = UIImage(data: data) else {
-                    state = .failed
+            for attempt in 0..<2 {
+                do {
+                    let (data, response) = try await URLSession.shared.data(for: request)
+                    guard !Task.isCancelled else { return }
+                    guard let http = response as? HTTPURLResponse,
+                          (200..<300).contains(http.statusCode),
+                          !data.isEmpty,
+                          let image = UIImage(data: data) else {
+                        if attempt == 0 {
+                            try? await Task.sleep(for: .milliseconds(450))
+                            continue
+                        }
+                        state = .failed
+                        return
+                    }
+
+                    let cached = CachedURLResponse(response: response, data: data)
+                    URLCache.shared.storeCachedResponse(cached, for: request)
+                    Self.memoryCache.setObject(image, forKey: url as NSURL, cost: data.count)
+                    state = .success(image)
                     return
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    if attempt == 0 {
+                        try? await Task.sleep(for: .milliseconds(450))
+                    } else {
+                        state = .failed
+                    }
                 }
-                URLCache.shared.storeCachedResponse(CachedURLResponse(response: response, data: data), for: request)
-                state = .success(image)
-            } catch {
-                guard !Task.isCancelled else { return }
-                state = .failed
             }
         }
     }
@@ -57,6 +89,8 @@ private final class ASURemoteImageLoader: ObservableObject {
 }
 
 struct ASURemoteImage: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let url: URL?
     var contentMode: ContentMode = .fit
     var background: Color = ASUDesign.gallery
@@ -70,44 +104,64 @@ struct ASURemoteImage: View {
 
             switch loader.state {
             case .idle, .loading:
-                ProgressView()
-                    .controlSize(.small)
-                    .tint(.secondary)
+                ASUImageSkeleton()
             case .success(let image):
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: contentMode)
-                    .padding(padding)
-                    .transition(.opacity.animation(.easeOut(duration: ASUDesign.navigationDuration)))
+                rendered(image)
             case .failed:
-                Image(systemName: "car.side")
-                    .font(.system(size: 48, weight: .light))
-                    .foregroundStyle(.tertiary)
+                VStack(spacing: 8) {
+                    Image(systemName: "car.side")
+                        .font(.system(size: 46, weight: .light))
+                    Text("Auto Sale Umar")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .tracking(0.5)
+                }
+                .foregroundStyle(.tertiary)
             }
         }
         .task(id: url) { loader.load(url) }
     }
+
+    @ViewBuilder
+    private func rendered(_ image: UIImage) -> some View {
+        let content = Image(uiImage: image)
+            .resizable()
+            .aspectRatio(contentMode: contentMode)
+            .padding(padding)
+
+        if reduceMotion {
+            content
+        } else {
+            content.transition(.opacity.animation(.easeOut(duration: ASUDesign.navigationDuration)))
+        }
+    }
 }
 
 struct ASUImageSkeleton: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var phase: CGFloat = -1
 
     var body: some View {
         GeometryReader { proxy in
             ZStack {
                 ASUDesign.gallery
-                LinearGradient(
-                    colors: [.clear, Color.white.opacity(0.14), .clear],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .frame(width: proxy.size.width * 0.75)
-                .offset(x: phase * proxy.size.width)
+
+                if !reduceMotion {
+                    LinearGradient(
+                        colors: [.clear, Color.white.opacity(0.14), .clear],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: proxy.size.width * 0.75)
+                    .offset(x: phase * proxy.size.width)
+                }
             }
             .clipped()
         }
         .onAppear {
-            withAnimation(.linear(duration: 1.25).repeatForever(autoreverses: false)) { phase = 1.7 }
+            guard !reduceMotion else { return }
+            withAnimation(.linear(duration: 1.25).repeatForever(autoreverses: false)) {
+                phase = 1.7
+            }
         }
     }
 }

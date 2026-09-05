@@ -1,31 +1,51 @@
-AUTO SALE UMAR — PHASE I+II+III CUMULATIVE REPAIR
+AUTO SALE UMAR — NATIVE SWIFTUI CUMULATIVE PHASE VI / XCODE COMPILE REPAIR 2
 
-WHY THIS ZIP EXISTS
-- Run 91924871490 DID extract/apply the ZIP in the runner workspace, then Xcode compile gate rejected HomeComponents.swift: invalid SwiftUI frame(width:minHeight:) overload.
-- Because that compile gate failed, Phase I was never committed to main.
-- Run 91935266346 also DID extract/apply its ZIP, then Xcode compile gate rejected Phase II because it referenced Phase I types that were not present in main: ASUGlassContainer, ASUGlassCircleSurface, ASUGlassPillButton, ASUHomeContent, plus catalog state views.
+PURPOSE
+- One cumulative mobile-update.zip for the current Auto Sale Umar native iOS repository.
+- Includes the full Phase I–VI native SwiftUI client payload and all compile repairs from supplied GitHub logs.
+- Website repository remains untouched.
 
-REPAIR
-- One cumulative/self-contained update containing Phase I + II + III together.
-- Sources and Resources are clean-replaced via DELETE.txt before copy, preventing stale/duplicate source files.
-- HomeComponents invalid frame call repaired as two legal frame modifiers.
-- Phase I shared Liquid Glass / HomeContent / HomeComponents / VideoSurface files included.
-- Missing ConnectionStateView and EmptyCatalogView restored into the Phase II catalog implementation.
-- Phase II Catalog/Car Detail/API/R2 worker included.
-- Phase III Smart Consultant / Compare / Client Services included.
-- Website repository untouched.
-- .github and Signing are not included.
+IMPORTANT WORKFLOW FACT
+- In run 92006087015, the ZIP extraction/apply step DID succeed in the GitHub runner workspace: "Native iOS update applied in workspace."
+- The workflow failed later at the Xcode compile gate (exit code 65), before commit/push.
+- Therefore those extracted files did not enter main. This is intentional protection in the workflow.
+- Rerunning the old failed job would use the same old commit/archive and would not apply this repaired ZIP.
 
-LOCAL QA
-- Swift syntax parse: PASS (29/29 files).
-- Foundation core semantic typecheck (L10n + Models + ClientModels + AppConfig + Persistence + APIClient + ClientAPI): PASS.
-- Custom *View reference scan: no unresolved project views after repair.
-- Backend worker node --check: PASS.
-- Asset catalog JSON: PASS.
-- project.yml YAML: PASS.
-- ZIP path traversal/protected path scan: PASS.
-- Exact safe-apply workflow simulation over an older Auto Sale Umar app repository: PASS.
-- Post-apply stale Web/LiquidGlassTabBar source removal: PASS.
+PREVIOUS REPAIRS RETAINED
+1) HomeComponents.swift Theme Picker:
+   Text($0.title(settings.language))
+2) ProfileView.swift customer profile save:
+   local trimmingCharacters(...) instead of cross-file private String.trimmed.
 
-FINAL BUILD LIMITATION
-Full SwiftUI semantic compilation requires Xcode 26 on macOS. The existing GitHub macos-26 compile gate remains authoritative.
+RUN 92006087015 — ACTUAL XCODE ERRORS FIXED
+- Sources/Views/ClientForms.swift:291:35 — RequestCarView had no member showroomCalendar.
+- Sources/Views/ClientForms.swift:292:35 — RequestCarView had no member showroomCalendar.
+- Sources/Views/ClientForms.swift:559:22 — showroomDatePart not found in BookingView scope.
+- Sources/Views/ClientForms.swift:560:22 — showroomDatePart not found in BookingView scope.
+- Sources/Views/ClientForms.swift:561:22 — showroomDatePart not found in BookingView scope.
+
+ROOT CAUSE
+- showroomDatePart had accidentally been placed inside RequestCarView while showroomCalendar/dateButton belong to BookingView.
+
+FIX
+- Moved showroomDatePart into BookingView, beside nextDates/dateButton.
+- Self.showroomCalendar now resolves to BookingView.showroomCalendar in the correct lexical scope.
+
+VALIDATION PERFORMED ON THIS PAYLOAD
+- Swift syntax parse: PASS (33/33 Swift files).
+- Exact HomeComponents compiler regression scan: PASS.
+- Exact ProfileView private-access regression scan: PASS.
+- Exact ClientForms BookingView scope regression: PASS.
+- All supplied run 92006087015 compiler diagnostics are directly addressed.
+- Backend/worker.js node --check: PASS.
+- Asset catalog Contents.json parse: PASS.
+- Support/Info.plist parse: PASS.
+- PrivacyInfo.xcprivacy parse: PASS.
+- project.yml YAML parse: PASS.
+- ZIP integrity/path traversal validation: PASS.
+- Cumulative DELETE.txt safe-apply simulation: PASS.
+- No .github payload.
+- No Signing payload.
+
+LIMITATION
+A full Xcode 26 compile is only available in the GitHub macOS runner, so the repository workflow remains the authoritative semantic/build gate.

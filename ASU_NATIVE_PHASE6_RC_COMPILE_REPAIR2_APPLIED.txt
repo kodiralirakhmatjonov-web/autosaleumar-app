@@ -1,0 +1,12 @@
+AUTO SALE UMAR — PHASE VI RC XCODE COMPILE REPAIR 2
+Date: 2026-09-05
+
+Fixes GitHub run 92006087015 after the cumulative Phase VI payload was successfully applied in the temporary runner workspace but failed the Xcode compile gate.
+
+Fixed:
+- BookingView date formatting helpers now live inside BookingView.
+- RequestCarView no longer incorrectly resolves BookingView.showroomCalendar through Self.
+- showroomDatePart is now in the correct lexical scope for BookingView.dateButton.
+
+No website repository changes.
+No .github or Signing changes.

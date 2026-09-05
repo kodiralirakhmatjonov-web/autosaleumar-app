@@ -175,34 +175,64 @@ struct ASUGlassPillButton<Label: View>: View {
                 .foregroundStyle(isSelected ? Color(uiColor: .systemBackground) : Color.primary)
                 .padding(.horizontal, 16)
                 .frame(height: 42)
-                .background {
-                    if isSelected {
-                        Capsule().fill(Color.primary)
-                    }
-                }
-                .modifier(ASUGlassCapsuleFallbackOnly(active: !isSelected))
+                .modifier(ASUGlassCapsule(selected: isSelected))
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
     }
 }
 
-private struct ASUGlassCapsuleFallbackOnly: ViewModifier {
-    let active: Bool
+struct ASUGlassProminentPillButton<Label: View>: View {
+    let action: () -> Void
+    let label: Label
+
+    init(action: @escaping () -> Void, @ViewBuilder label: () -> Label) {
+        self.action = action
+        self.label = label()
+    }
+
+    var body: some View {
+        Button(action: action) {
+            label
+                .foregroundStyle(Color(uiColor: .systemBackground))
+                .modifier(ASUGlassProminentCapsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct ASUGlassCapsule: ViewModifier {
+    let selected: Bool
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if active {
-            if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, *) {
+            if selected {
+                content.glassEffect(.regular.tint(Color.primary).interactive(), in: Capsule())
+            } else {
                 content.glassEffect(.regular.interactive(), in: Capsule())
+            }
+        } else {
+            if selected {
+                content.background(Color.primary, in: Capsule())
             } else {
                 content
                     .background(.ultraThinMaterial, in: Capsule())
                     .overlay(Capsule().stroke(Color.white.opacity(0.20), lineWidth: 0.7))
                     .shadow(color: .black.opacity(0.06), radius: 12, y: 5)
             }
+        }
+    }
+}
+
+private struct ASUGlassProminentCapsule: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.tint(Color.primary).interactive(), in: Capsule())
         } else {
-            content
+            content.background(Color.primary, in: Capsule())
         }
     }
 }

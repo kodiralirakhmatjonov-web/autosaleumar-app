@@ -1,0 +1,7 @@
+AUTO SALE UMAR — PHASE VI RELEASE CANDIDATE COMPILE REPAIR
+
+This cumulative archive fixes both Xcode failures supplied by the user:
+1. HomeComponents.swift: AppTheme.title requires AppLanguage; the picker now calls title(settings.language).
+2. ProfileView.swift: removed cross-file use of a file-private String.trimmed helper; trimming is performed locally.
+
+The archive remains cumulative through Phase I–VI. Website repository is untouched.

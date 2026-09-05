@@ -1,0 +1,20 @@
+AUTO SALE UMAR — NATIVE SWIFTUI PHASE VI / RELEASE CANDIDATE
+
+Final production pass before TestFlight.
+
+Included cumulative scope:
+- Phase I: native foundation + Home + website visual language
+- Phase II: Catalog + Car Detail + app-owned D1/R2 media delivery
+- Phase III: Compare + Smart Consultant shell + client services
+- Phase IV: production polish, caching, accessibility, motion and error states
+- Phase V: client Profile, local continuity and visit reminders
+- Phase VI: release-candidate routing, lifecycle restoration, notification routing,
+  native matched navigation transitions, API-contract corrections and final Liquid Glass audit
+
+Release-candidate invariants:
+- Native SwiftUI only; no WebView/WKWebView mirror.
+- iOS 26 interactive chrome uses native Liquid Glass APIs with older-iOS fallbacks.
+- System NavigationStack back behavior remains intact, including edge swipe-back.
+- Auto Sale Umar website repository is source-of-truth but is not modified by this update.
+- App bundle identifier remains com.autosaleumar.app.
+- Backend/worker.js is unchanged from the already deployed cumulative baseline.

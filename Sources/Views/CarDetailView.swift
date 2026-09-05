@@ -4,6 +4,8 @@ struct CarDetailView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var store: AppStore
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let car: Car
 
@@ -33,12 +35,19 @@ struct CarDetailView: View {
         return (exteriorPhotos + interiorPhotos + detailPhotos).filter { seen.insert($0.url.absoluteString).inserted }
     }
 
+    private var adaptiveColumns: [GridItem] {
+        dynamicTypeSize.isAccessibilitySize
+            ? [GridItem(.flexible())]
+            : [GridItem(.flexible()), GridItem(.flexible())]
+    }
+
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 brandStage
                 brandMedallion
                 heroSection
+                if loadError != nil { detailLoadBanner }
                 editorialSection
                 detailPhotoRail
                 performanceSection
@@ -57,7 +66,7 @@ struct CarDetailView: View {
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button {
-                    withAnimation(ASUDesign.spring) { store.toggleFavorite(car) }
+                    withAnimation(reduceMotion ? nil : ASUDesign.spring) { store.toggleFavorite(car) }
                 } label: {
                     Image(systemName: store.isFavorite(car) ? "heart.fill" : "heart")
                         .foregroundStyle(store.isFavorite(car) ? ASUDesign.orange : Color.primary)
@@ -66,7 +75,7 @@ struct CarDetailView: View {
             }
         }
         .sheet(isPresented: $showContact) { ContactSheet(car: car) }
-        .sheet(isPresented: $showBooking) { CarBookingSheet(car: car) }
+        .sheet(isPresented: $showBooking) { NavigationStack { BookingView(initialCar: car) } }
         .fullScreenCover(isPresented: $showGallery) {
             FullScreenCarGallery(title: car.displayName, photos: galleryPhotos, initialIndex: selectedPhoto)
         }
@@ -164,13 +173,8 @@ struct CarDetailView: View {
                     HStack(spacing: 9) {
                         Button { showBooking = true } label: {
                             Label(L10n.t("Забронировать визит", "Tashrifni band qilish", settings.language), systemImage: "calendar")
-                                .font(.system(size: 14.5, weight: .semibold, design: .rounded))
-                                .foregroundStyle(Color(uiColor: .systemBackground))
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 52)
-                                .background(Color.primary, in: RoundedRectangle(cornerRadius: 19, style: .continuous))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(ASUPrimaryButtonStyle())
 
                         ASUGlassIconButton(
                             symbol: store.isCompared(car) ? "rectangle.2.swap.fill" : "rectangle.2.swap",
@@ -304,9 +308,7 @@ struct CarDetailView: View {
                             .padding(17)
                         }
                         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-                        .scrollTransition(.interactive, axis: .horizontal) { content, phase in
-                            content.scaleEffect(phase.isIdentity ? 1 : 0.95).opacity(phase.isIdentity ? 1 : 0.82)
-                        }
+                        .asuStoryTransition(axis: .horizontal)
                     }
                 }
                 .padding(.horizontal, ASUDesign.pagePadding)
@@ -338,7 +340,7 @@ struct CarDetailView: View {
                         .frame(height: 100)
                 }
 
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 0) {
+                LazyVGrid(columns: adaptiveColumns, spacing: 0) {
                     ForEach(performanceItems(performance), id: \.label) { item in
                         VStack(alignment: .leading, spacing: 5) {
                             Text(item.value)
@@ -401,7 +403,7 @@ struct CarDetailView: View {
                         ForEach(detail.variants.indices, id: \.self) { index in
                             let variant = detail.variants[index]
                             Button {
-                                withAnimation(ASUDesign.spring) {
+                                withAnimation(reduceMotion ? nil : ASUDesign.spring) {
                                     selectedVariant = index
                                     selectedPhoto = 0
                                 }
@@ -457,9 +459,7 @@ struct CarDetailView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
                                 .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(ASUDesign.line, lineWidth: 0.7))
                                 .onTapGesture { selectedPhoto = index; showGallery = true }
-                                .scrollTransition(.interactive, axis: .horizontal) { content, phase in
-                                    content.scaleEffect(phase.isIdentity ? 1 : 0.94).opacity(phase.isIdentity ? 1 : 0.80)
-                                }
+                                .asuStoryTransition(axis: .horizontal)
                         }
                     }
                 }
@@ -477,7 +477,7 @@ struct CarDetailView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Label(L10n.t("Характеристики", "Xususiyatlar", settings.language), systemImage: "gauge.with.dots.needle.67percent")
                         .font(.system(size: 20, weight: .bold, design: .rounded))
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 0) {
+                    LazyVGrid(columns: adaptiveColumns, spacing: 0) {
                         ForEach(specs, id: \.label) { item in
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(item.label).font(.system(size: 10.5, design: .rounded)).foregroundStyle(.secondary)
@@ -523,8 +523,9 @@ struct CarDetailView: View {
                     Label(L10n.t("Забронировать визит", "Tashrifni band qilish", settings.language), systemImage: "calendar")
                         .font(.system(size: 15.5, weight: .semibold, design: .rounded))
                         .foregroundStyle(.black)
-                        .frame(maxWidth: .infinity).frame(height: 54)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 19, style: .continuous))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .modifier(ASUDarkProminentGlassButton())
                 }
                 .buttonStyle(.plain)
 
@@ -532,9 +533,9 @@ struct CarDetailView: View {
                     Label(L10n.t("Связаться с менеджером", "Menejer bilan bog‘lanish", settings.language), systemImage: "message")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity).frame(height: 52)
-                        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 19, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 19, style: .continuous).stroke(Color.white.opacity(0.15), lineWidth: 0.7))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .modifier(ASUDarkGlassButton())
                 }
                 .buttonStyle(.plain)
 
@@ -647,8 +648,34 @@ struct CarDetailView: View {
             selectedVariant = 0
             selectedPhoto = 0
         } catch {
-            loadError = error.localizedDescription
+            loadError = settings.language == .ru ? error.localizedDescription : "Avtomobil tafsilotlarini yangilab bo‘lmadi. Asosiy katalog ma’lumotlari ko‘rsatilmoqda."
         }
+    }
+
+    private var detailLoadBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
+                .font(.system(size: 15, weight: .semibold))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L10n.t("Не удалось обновить детали", "Tafsilotlarni yangilab bo‘lmadi", settings.language))
+                    .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                if let loadError {
+                    Text(loadError)
+                        .font(.system(size: 11.5, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+            Spacer(minLength: 6)
+            Button(L10n.t("Повторить", "Qayta", settings.language)) {
+                Task { await loadDetail() }
+            }
+            .font(.system(size: 12, weight: .semibold, design: .rounded))
+        }
+        .padding(14)
+        .asuCard(radius: 20, shadow: false)
+        .padding(.horizontal, ASUDesign.pagePadding)
+        .padding(.top, 12)
     }
 }
 
@@ -661,10 +688,16 @@ private struct SpecItem: Hashable {
 private struct VariantGlass: ViewModifier {
     let active: Bool
     @ViewBuilder func body(content: Content) -> some View {
-        if active {
-            if #available(iOS 26.0, *) { content.glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 22, style: .continuous)) }
-            else { content.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous)).overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.white.opacity(0.2), lineWidth: 0.6)) }
-        } else { content.background(ASUDesign.elevated, in: RoundedRectangle(cornerRadius: 22, style: .continuous)) }
+        let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.interactive(), in: shape)
+        } else if active {
+            content
+                .background(.ultraThinMaterial, in: shape)
+                .overlay(shape.stroke(Color.white.opacity(0.2), lineWidth: 0.6))
+        } else {
+            content.background(ASUDesign.elevated, in: shape)
+        }
     }
 }
 
@@ -733,11 +766,8 @@ struct ContactSheet: View {
 
             Button { openURL(whatsAppURL(car)) } label: {
                 Label("WhatsApp", systemImage: "message.fill")
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color(uiColor: .systemBackground))
-                    .frame(maxWidth: .infinity).frame(height: 54)
-                    .background(Color.primary, in: RoundedRectangle(cornerRadius: 19, style: .continuous))
-            }.buttonStyle(.plain)
+            }
+            .buttonStyle(ASUPrimaryButtonStyle())
 
             ASUGlassActionTile(action: { openURL(AppConfig.telegram) }) {
                 Label("Telegram", systemImage: "paperplane.fill")
@@ -754,7 +784,6 @@ struct ContactSheet: View {
         .padding(.horizontal, 20)
         .presentationDetents([.height(365)])
         .presentationCornerRadius(34)
-        .presentationBackground(.regularMaterial)
     }
 
     private func whatsAppURL(_ car: Car?) -> URL {
@@ -764,40 +793,28 @@ struct ContactSheet: View {
     }
 }
 
-private struct CarBookingSheet: View {
-    @EnvironmentObject private var settings: AppSettings
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
-    let car: Car
-    @State private var name = ""
-    @State private var date = Date().addingTimeInterval(86_400)
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section(L10n.t("Автомобиль", "Avtomobil", settings.language)) {
-                    LabeledContent(L10n.t("Модель", "Model", settings.language), value: car.displayName)
-                    LabeledContent(L10n.t("Цена", "Narx", settings.language), value: Format.price(car, language: settings.language))
-                }
-                Section(L10n.t("Визит", "Tashrif", settings.language)) {
-                    TextField(L10n.t("Ваше имя", "Ismingiz", settings.language), text: $name)
-                    DatePicker(L10n.t("Дата и время", "Sana va vaqt", settings.language), selection: $date, in: Date()...)
-                }
-                Section {
-                    Button(L10n.t("Подтвердить через WhatsApp", "WhatsApp orqali tasdiqlash", settings.language)) { openURL(bookingURL) }
-                }
-            }
-            .navigationTitle(L10n.t("Забронировать визит", "Tashrifni band qilish", settings.language))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(L10n.t("Закрыть", "Yopish", settings.language)) { dismiss() } } }
+private struct ASUDarkProminentGlassButton: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 19, style: .continuous)
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.tint(.white).interactive(), in: shape)
+        } else {
+            content.background(.white, in: shape)
         }
-        .presentationCornerRadius(34)
     }
+}
 
-    private var bookingURL: URL {
-        let formatter = DateFormatter(); formatter.locale = Locale(identifier: "ru_RU"); formatter.dateFormat = "dd.MM.yyyy HH:mm"
-        let text = "Здравствуйте. Хочу забронировать визит по \(car.displayName). Имя: \(name). Время: \(formatter.string(from: date))."
-        let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        return URL(string: "https://wa.me/\(AppConfig.whatsappPhone)?text=\(encoded)")!
+private struct ASUDarkGlassButton: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 19, style: .continuous)
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.interactive(), in: shape)
+        } else {
+            content
+                .background(Color.white.opacity(0.08), in: shape)
+                .overlay(shape.stroke(Color.white.opacity(0.15), lineWidth: 0.7))
+        }
     }
 }

@@ -6,6 +6,7 @@ struct CompareView: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var showPicker = false
     @State private var pickerSearch = ""
@@ -40,6 +41,7 @@ struct CompareView: View {
                 .padding(.horizontal, ASUDesign.pagePadding)
                 .padding(.bottom, 34)
             }
+            .scrollDismissesKeyboard(.interactively)
             .background(ASUDesign.page)
             .navigationTitle(L10n.t("Сравнение", "Solishtirish", settings.language))
             .navigationBarTitleDisplayMode(.inline)
@@ -304,7 +306,7 @@ struct CompareView: View {
         return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
             ForEach(criteria) { criterion in
                 Button {
-                    withAnimation(.easeOut(duration: ASUDesign.microDuration)) {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: ASUDesign.microDuration)) {
                         if selectedCriteria.contains(criterion) { selectedCriteria.remove(criterion) }
                         else { selectedCriteria.insert(criterion) }
                     }
@@ -319,7 +321,7 @@ struct CompareView: View {
                     .foregroundStyle(selectedCriteria.contains(criterion) ? .black : .white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 38)
-                    .background(selectedCriteria.contains(criterion) ? .white : .white.opacity(0.09), in: Capsule())
+                    .modifier(CompareDarkSelectable(selected: selectedCriteria.contains(criterion)))
                 }
                 .buttonStyle(.plain)
             }
@@ -335,14 +337,14 @@ struct CompareView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14)
                     .frame(height: 48)
-                    .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .modifier(CompareDarkField(radius: 16))
                 Picker("", selection: $currency) {
                     ForEach(ASUCurrency.allCases) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.menu)
                 .tint(.white)
                 .frame(width: 88, height: 48)
-                .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .modifier(CompareDarkField(radius: 16))
             }
 
             TextField(L10n.t(
@@ -354,7 +356,7 @@ struct CompareView: View {
                 .font(.system(size: 13.5, design: .rounded))
                 .foregroundStyle(.white)
                 .padding(14)
-                .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .modifier(CompareDarkField(radius: 18))
         }
     }
 
@@ -371,7 +373,7 @@ struct CompareView: View {
             .foregroundStyle(.black)
             .frame(maxWidth: .infinity)
             .frame(height: 52)
-            .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .modifier(CompareDarkProminentButton())
         }
         .buttonStyle(.plain)
         .disabled(aiLoading != nil)
@@ -511,10 +513,12 @@ struct CompareView: View {
         aiResult = nil
         guard selectedCars.count >= 2 else {
             aiError = L10n.t("Сначала выберите минимум два автомобиля.", "Avval kamida ikkita avtomobil tanlang.", settings.language)
+            ASUHaptics.error()
             return
         }
         if action == .advice, selectedCriteria.isEmpty, note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             aiError = L10n.t("Для совета выберите хотя бы один критерий или напишите комментарий.", "Maslahat uchun kamida bitta mezon tanlang yoki izoh yozing.", settings.language)
+            ASUHaptics.error()
             return
         }
 
@@ -532,9 +536,11 @@ struct CompareView: View {
                 language: settings.language
             )
             quota = output.1
-            withAnimation(.easeInOut(duration: ASUDesign.navigationDuration)) { aiResult = output.0 }
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: ASUDesign.navigationDuration)) { aiResult = output.0 }
+            ASUHaptics.success()
         } catch {
-            aiError = error.localizedDescription
+            aiError = settings.language == .ru ? error.localizedDescription : "Maslahatchi vaqtincha mavjud emas. Qayta urinib ko‘ring."
+            ASUHaptics.error()
         }
     }
 
@@ -577,13 +583,58 @@ private struct CompareGlassCircle: ViewModifier {
     }
 }
 
+private struct CompareDarkSelectable: ViewModifier {
+    let selected: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            if selected { content.glassEffect(.regular.tint(.white).interactive(), in: Capsule()) }
+            else { content.glassEffect(.regular.interactive(), in: Capsule()) }
+        } else {
+            content.background(selected ? AnyShapeStyle(Color.white) : AnyShapeStyle(Color.white.opacity(0.09)), in: Capsule())
+        }
+    }
+}
+
+private struct CompareDarkField: ViewModifier {
+    let radius: CGFloat
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.interactive(), in: shape)
+        } else {
+            content.background(Color.white.opacity(0.09), in: shape)
+        }
+    }
+}
+
+private struct CompareDarkProminentButton: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.tint(.white).interactive(), in: shape)
+        } else {
+            content.background(.white, in: shape)
+        }
+    }
+}
+
 private struct TypewriterText: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let text: String
     @State private var visible = ""
 
     var body: some View {
         Text(visible)
             .task(id: text) {
+                if reduceMotion {
+                    visible = text
+                    return
+                }
                 visible = ""
                 for character in text {
                     if Task.isCancelled { return }

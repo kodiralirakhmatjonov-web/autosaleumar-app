@@ -1,0 +1,18 @@
+Auto Sale Umar Native iOS — Phase V Client Continuity
+
+Implemented:
+- Native Profile tab replacing the generic More tab.
+- Local customer profile with reusable name, phone and preferred contact channel.
+- Request and showroom-visit history stored locally on the iPhone.
+- Request/visit codes remain accessible and copyable after the success screen closes.
+- Visit reminders scheduled through native iOS notifications two hours before the booked slot, only after user authorization.
+- Profile quick actions: personal selection, booking and compare.
+- Favorites / compare / activity counters.
+- RU / UZ and System / Light / Dark controls retained inside Profile.
+- Location, Trust, Ramadan Gift and contact surfaces retained.
+
+Data integrity rule:
+The website source does not expose a public customer order-tracking/status API. The iOS client therefore does not fabricate live order states. Phase V stores real submission receipts and visit bookings locally; live delivery/order tracking remains a future backend capability.
+
+Website repository: untouched.
+App-owned Worker: unchanged byte-for-byte from Phase IV.

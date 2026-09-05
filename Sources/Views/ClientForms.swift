@@ -18,9 +18,9 @@ struct RequestCarView: View {
     @State private var acceptInTransit = true
     @State private var sourceURL = ""
     @State private var note = ""
-    @State private var name = ""
-    @State private var phone = ""
-    @State private var contactChannel: ContactChannel = .whatsapp
+    @State private var name = Persistence.customerProfile().name
+    @State private var phone = Persistence.customerProfile().phone
+    @State private var contactChannel: ContactChannel = Persistence.customerProfile().preferredChannel
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var receipt: VehicleRequestReceipt?
@@ -45,6 +45,7 @@ struct RequestCarView: View {
             .padding(.horizontal, ASUDesign.pagePadding)
             .padding(.bottom, 34)
         }
+        .scrollDismissesKeyboard(.interactively)
         .background(ASUDesign.page)
         .navigationTitle(L10n.t("Персональный подбор", "Shaxsiy tanlov", settings.language))
         .navigationBarTitleDisplayMode(.inline)
@@ -286,15 +287,15 @@ struct RequestCarView: View {
 
     private func submit() async {
         errorMessage = nil
-        guard name.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 else { errorMessage = L10n.t("Укажите ваше имя.", "Ismingizni kiriting.", settings.language); return }
-        guard phone.filter(\.isNumber).count >= 7 else { errorMessage = L10n.t("Укажите корректный номер телефона.", "Telefon raqamini tekshiring.", settings.language); return }
-        guard brand.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 else { errorMessage = L10n.t("Укажите марку автомобиля.", "Avtomobil markasini kiriting.", settings.language); return }
-        guard !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { errorMessage = L10n.t("Укажите модель автомобиля.", "Avtomobil modelini kiriting.", settings.language); return }
+        guard name.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 else { errorMessage = L10n.t("Укажите ваше имя.", "Ismingizni kiriting.", settings.language); ASUHaptics.error(); return }
+        guard phone.filter(\.isNumber).count >= 7 else { errorMessage = L10n.t("Укажите корректный номер телефона.", "Telefon raqamini tekshiring.", settings.language); ASUHaptics.error(); return }
+        guard brand.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 else { errorMessage = L10n.t("Укажите марку автомобиля.", "Avtomobil markasini kiriting.", settings.language); ASUHaptics.error(); return }
+        guard !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { errorMessage = L10n.t("Укажите модель автомобиля.", "Avtomobil modelini kiriting.", settings.language); ASUHaptics.error(); return }
 
         isSubmitting = true
         defer { isSubmitting = false }
         do {
-            receipt = try await api.submitVehicleRequest(VehicleRequestDraft(
+            let response = try await api.submitVehicleRequest(VehicleRequestDraft(
                 customerName: name.trimmed,
                 phone: phone.trimmed,
                 contactChannel: contactChannel,
@@ -312,8 +313,13 @@ struct RequestCarView: View {
                 sourceUrl: sourceURL.nilIfEmpty,
                 note: note.nilIfEmpty
             ))
+            receipt = response
+            Persistence.recordVehicleRequest(response)
+            Persistence.saveCustomerProfile(ASUCustomerProfile(name: name.trimmed, phone: phone.trimmed, preferredChannel: contactChannel))
+            ASUHaptics.success()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = settings.language == .ru ? error.localizedDescription : "Xizmat vaqtincha mavjud emas. Qayta urinib ko‘ring."
+            ASUHaptics.error()
         }
     }
 }
@@ -324,19 +330,24 @@ struct BookingView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
 
-    @State private var selectedDate = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
-    @State private var timeSlot = "10:00–12:00"
+    @State private var selectedDate = BookingView.defaultVisitDate
+    @State private var timeSlot = "09:00–11:00"
     @State private var brand = ""
     @State private var carID: Int?
-    @State private var name = ""
-    @State private var phone = ""
+    @State private var name = Persistence.customerProfile().name
+    @State private var phone = Persistence.customerProfile().phone
     @State private var note = ""
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var receipt: VisitReceipt?
 
     private let api = ClientAPI()
-    private let timeSlots = ["10:00–12:00", "12:00–14:00", "14:00–16:00", "16:00–18:00", "18:00–20:00"]
+    private let timeSlots = ["09:00–11:00", "11:00–13:00", "14:00–16:00", "16:00–18:00", "18:00–20:00"]
+
+    init(initialCar: Car? = nil) {
+        _brand = State(initialValue: initialCar?.brand ?? "")
+        _carID = State(initialValue: initialCar?.id)
+    }
 
     private var selectedCar: Car? { carID.flatMap { id in store.cars.first(where: { $0.id == id }) } }
     private var availableCars: [Car] { brand.isEmpty ? store.cars : store.cars.filter { $0.brand == brand } }
@@ -358,6 +369,7 @@ struct BookingView: View {
             .padding(.horizontal, ASUDesign.pagePadding)
             .padding(.bottom, 34)
         }
+        .scrollDismissesKeyboard(.interactively)
         .background(ASUDesign.page)
         .navigationTitle(L10n.t("Визит", "Tashrif", settings.language))
         .navigationBarTitleDisplayMode(.inline)
@@ -514,36 +526,61 @@ struct BookingView: View {
         .padding(.horizontal, 14).frame(height: 60).modifier(ClientGlassField())
     }
 
+    private static var showroomCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Tashkent") ?? .current
+        return calendar
+    }
+
+    private static var defaultVisitDate: Date {
+        let calendar = showroomCalendar
+        return calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: Date())) ?? Date()
+    }
+
     private var nextDates: [Date] {
-        (1...14).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: Calendar.current.startOfDay(for: Date())) }
+        let calendar = Self.showroomCalendar
+        let today = calendar.startOfDay(for: Date())
+        return (1...21).compactMap { calendar.date(byAdding: .day, value: $0, to: today) }
+    }
+
+    private func showroomDatePart(_ date: Date, template: String) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: settings.language == .ru ? "ru_RU" : "uz_UZ")
+        formatter.calendar = Self.showroomCalendar
+        formatter.timeZone = Self.showroomCalendar.timeZone
+        formatter.setLocalizedDateFormatFromTemplate(template)
+        return formatter.string(from: date)
     }
 
     private func dateButton(_ date: Date) -> some View {
-        let selected = Calendar.current.isDate(selectedDate, inSameDayAs: date)
+        let selected = Self.showroomCalendar.isDate(selectedDate, inSameDayAs: date)
         return Button { selectedDate = date } label: {
             VStack(spacing: 4) {
-                Text(date.formatted(.dateTime.weekday(.abbreviated))).font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                Text(date.formatted(.dateTime.day())).font(.system(size: 18, weight: .bold, design: .rounded))
-                Text(date.formatted(.dateTime.month(.abbreviated))).font(.system(size: 10.5, design: .rounded))
+                Text(showroomDatePart(date, template: "EEE")).font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                Text(showroomDatePart(date, template: "d")).font(.system(size: 18, weight: .bold, design: .rounded))
+                Text(showroomDatePart(date, template: "MMM")).font(.system(size: 10.5, design: .rounded))
             }
             .foregroundStyle(selected ? Color(uiColor: .systemBackground) : .primary)
             .frame(width: 68, height: 76)
-            .background(selected ? Color.primary : .clear, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .modifier(ClientGlassFieldFallbackOnly(active: !selected))
+            .modifier(ClientGlassSelectable(selected: selected))
         }
         .buttonStyle(.plain)
     }
 
     private func submit() async {
         errorMessage = nil
-        guard name.trimmed.count >= 2 else { errorMessage = L10n.t("Укажите ваше имя.", "Ismingizni kiriting.", settings.language); return }
-        guard phone.filter(\.isNumber).count >= 7 else { errorMessage = L10n.t("Укажите корректный номер телефона.", "Telefon raqamini tekshiring.", settings.language); return }
+        guard name.trimmed.count >= 2 else { errorMessage = L10n.t("Укажите ваше имя.", "Ismingizni kiriting.", settings.language); ASUHaptics.error(); return }
+        guard phone.filter(\.isNumber).count >= 7 else { errorMessage = L10n.t("Укажите корректный номер телефона.", "Telefon raqamini tekshiring.", settings.language); ASUHaptics.error(); return }
 
         isSubmitting = true
         defer { isSubmitting = false }
         do {
-            let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
-            receipt = try await api.submitVisit(VisitDraft(
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.calendar = Self.showroomCalendar
+            formatter.timeZone = Self.showroomCalendar.timeZone
+            formatter.dateFormat = "yyyy-MM-dd"
+            let response = try await api.submitVisit(VisitDraft(
                 customerName: name.trimmed,
                 phone: phone.trimmed,
                 visitDate: formatter.string(from: selectedDate),
@@ -553,8 +590,17 @@ struct BookingView: View {
                 carLabel: selectedCar.map { car in "\(car.displayName)\(car.trim.map { " · \($0)" } ?? "")" },
                 note: note.nilIfEmpty
             ))
+            receipt = response
+            Persistence.recordVisit(response)
+            let existing = Persistence.customerProfile()
+            Persistence.saveCustomerProfile(ASUCustomerProfile(name: name.trimmed, phone: phone.trimmed, preferredChannel: existing.preferredChannel))
+            if settings.visitRemindersEnabled {
+                await ASUVisitReminder.schedule(for: response, language: settings.language)
+            }
+            ASUHaptics.success()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = settings.language == .ru ? error.localizedDescription : "Xizmat vaqtincha mavjud emas. Qayta urinib ko‘ring."
+            ASUHaptics.error()
         }
     }
 }
@@ -610,6 +656,23 @@ struct ClientGlassField: ViewModifier {
         } else {
             content.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.18), lineWidth: 0.7))
+        }
+    }
+}
+
+
+struct ClientGlassSelectable: ViewModifier {
+    let selected: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        if #available(iOS 26.0, *) {
+            if selected { content.glassEffect(.regular.tint(Color.primary).interactive(), in: shape) }
+            else { content.glassEffect(.regular.interactive(), in: shape) }
+        } else {
+            if selected { content.background(Color.primary, in: shape) }
+            else { content.background(.ultraThinMaterial, in: shape) }
         }
     }
 }

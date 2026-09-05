@@ -484,7 +484,7 @@ struct RamadanGiftView: View {
             gift = try await api.fetchRamadanGift()
             selectedMediaID = gift?.coverMedia?.id
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = settings.language == .ru ? error.localizedDescription : "Ramadan Gift ma’lumotlarini yuklab bo‘lmadi. Keyinroq qayta urinib ko‘ring."
         }
     }
 }

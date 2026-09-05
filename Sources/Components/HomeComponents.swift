@@ -82,6 +82,7 @@ struct ASUHomeSectionHeader: View {
 struct ASUHomeCarCard: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var store: AppStore
+    @Environment(\.colorScheme) private var colorScheme
     let car: Car
 
     var body: some View {
@@ -96,7 +97,7 @@ struct ASUHomeCarCard: View {
                         symbol: store.isFavorite(car) ? "heart.fill" : "heart",
                         size: 38,
                         fontSize: 15,
-                        accessibilityLabel: L10n.t("Избранное", "Saqlangan", settings.language)
+                        accessibilityLabel: store.isFavorite(car) ? L10n.t("Удалить из избранного", "Saqlanganlardan olib tashlash", settings.language) : L10n.t("Добавить в избранное", "Saqlanganlarga qo‘shish", settings.language)
                     ) {
                         store.toggleFavorite(car)
                     }
@@ -136,12 +137,13 @@ struct ASUHomeCarCard: View {
             RoundedRectangle(cornerRadius: 30, style: .continuous)
                 .stroke(ASUDesign.line, lineWidth: 0.7)
         )
-        .shadow(color: .black.opacity(0.055), radius: 20, y: 10)
+        .shadow(color: colorScheme == .light ? .black.opacity(0.055) : .clear, radius: 20, y: 10)
     }
 }
 
 struct ASUShowroomStoryCard: View {
     @EnvironmentObject private var settings: AppSettings
+    @Environment(\.colorScheme) private var colorScheme
     let story: ASUShowroomStory
 
     var body: some View {
@@ -168,7 +170,7 @@ struct ASUShowroomStoryCard: View {
         .background(ASUDesign.elevated)
         .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 32, style: .continuous).stroke(ASUDesign.line, lineWidth: 0.7))
-        .shadow(color: .black.opacity(0.05), radius: 20, y: 9)
+        .shadow(color: colorScheme == .light ? .black.opacity(0.05) : .clear, radius: 20, y: 9)
     }
 }
 
@@ -264,7 +266,7 @@ struct ASUHomeMenuSheet: View {
                             .foregroundStyle(.secondary)
                             .padding(.top, 4)
                         Picker("Theme", selection: $settings.theme) {
-                            ForEach(AppTheme.allCases) { Text($0.title).tag($0) }
+                            ForEach(AppTheme.allCases) { Text($0.title(settings.language)).tag($0) }
                         }
                         .pickerStyle(.segmented)
                     }

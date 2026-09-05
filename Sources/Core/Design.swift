@@ -24,6 +24,7 @@ enum ASUDesign {
 }
 
 struct ASUCardModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
     var radius: CGFloat = ASUDesign.corner
     var shadow: Bool = true
 
@@ -33,13 +34,18 @@ struct ASUCardModifier: ViewModifier {
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .stroke(ASUDesign.line, lineWidth: 0.7)
+                    .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : ASUDesign.line, lineWidth: 0.7)
             )
-            .shadow(color: shadow ? .black.opacity(0.05) : .clear, radius: 18, y: 8)
+            .shadow(
+                color: shadow && colorScheme == .light ? .black.opacity(0.05) : .clear,
+                radius: 18,
+                y: 8
+            )
     }
 }
 
 struct ASUPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var prominent: Bool = true
 
     func makeBody(configuration: Configuration) -> some View {
@@ -48,19 +54,32 @@ struct ASUPrimaryButtonStyle: ButtonStyle {
             .foregroundStyle(prominent ? Color(uiColor: .systemBackground) : Color.primary)
             .frame(maxWidth: .infinity)
             .frame(height: 56)
-            .background(
-                prominent ? AnyShapeStyle(Color.primary) : AnyShapeStyle(ASUDesign.soft),
-                in: RoundedRectangle(cornerRadius: 20, style: .continuous)
-            )
-            .overlay {
-                if !prominent {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(ASUDesign.line, lineWidth: 0.7)
-                }
-            }
+            .modifier(ASUPrimaryButtonSurface(prominent: prominent))
             .scaleEffect(configuration.isPressed ? 0.982 : 1)
             .opacity(configuration.isPressed ? 0.90 : 1)
-            .animation(.easeOut(duration: ASUDesign.microDuration), value: configuration.isPressed)
+            .animation(reduceMotion ? nil : .easeOut(duration: ASUDesign.microDuration), value: configuration.isPressed)
+    }
+}
+
+private struct ASUPrimaryButtonSurface: ViewModifier {
+    let prominent: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        if #available(iOS 26.0, *) {
+            if prominent {
+                content.glassEffect(.regular.tint(Color.primary).interactive(), in: shape)
+            } else {
+                content.glassEffect(.regular.interactive(), in: shape)
+            }
+        } else {
+            content
+                .background(prominent ? AnyShapeStyle(Color.primary) : AnyShapeStyle(ASUDesign.soft), in: shape)
+                .overlay {
+                    if !prominent { shape.stroke(ASUDesign.line, lineWidth: 0.7) }
+                }
+        }
     }
 }
 
@@ -88,16 +107,25 @@ extension View {
         modifier(ASUSectionTitleStyle(size: size))
     }
 
-    @ViewBuilder
     func asuStoryTransition(axis: Axis = .vertical) -> some View {
-        if #available(iOS 17.0, *) {
-            self.scrollTransition(.interactive, axis: axis) { content, phase in
-                content
+        modifier(ASUStoryTransitionModifier(axis: axis))
+    }
+}
+
+private struct ASUStoryTransitionModifier: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let axis: Axis
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if reduceMotion {
+            content
+        } else {
+            content.scrollTransition(.interactive, axis: axis) { transformed, phase in
+                transformed
                     .opacity(phase.isIdentity ? 1 : 0.72)
                     .scaleEffect(phase.isIdentity ? 1 : 0.965)
             }
-        } else {
-            self
         }
     }
 }

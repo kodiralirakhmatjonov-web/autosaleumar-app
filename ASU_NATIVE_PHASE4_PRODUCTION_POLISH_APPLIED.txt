@@ -1,0 +1,21 @@
+AUTO SALE UMAR — NATIVE SWIFTUI PHASE IV PRODUCTION POLISH
+
+Cumulative package: Phase I + II + III + IV.
+Website repository remains untouched.
+Native iOS source/resources are clean-replaced by DELETE.txt to avoid stale partial files.
+
+Phase IV focus:
+- image memory + disk/network cache tuning and first-screen prefetch
+- automatic catalog refresh when returning to the app
+- disk-based catalog cache with legacy migration
+- stale/offline catalog states on Home and Catalog
+- accessibility Reduce Motion compliance for story transitions and skeletons
+- Dynamic Type safety: catalog and car-detail grids switch to larger layouts for accessibility sizes
+- dark-mode shadow/border audit for premium content cards
+- native haptic feedback for favorite/compare, validation, successful requests, bookings and AI result
+- RU/UZ settings/localized failure-state audit
+- interactive keyboard dismissal in client forms / Smart Consultant
+- app version footer and production UI cleanup
+
+Backend/worker.js is byte-identical to the previously working Phase III worker.
+No app API redeploy is required for this update.

@@ -38,6 +38,8 @@ struct HomeView: View {
                         heroBlock
                             .id(HomeAnchor.top.rawValue)
 
+                        catalogStatusBanner
+
                         brandSection
                             .id(HomeAnchor.cars.rawValue)
 
@@ -108,7 +110,7 @@ struct HomeView: View {
                 .background(ASUDesign.page)
                 .onChange(of: scrollTarget) { _, target in
                     guard let target else { return }
-                    withAnimation(ASUDesign.softSpring) {
+                    withAnimation(reduceMotion ? nil : ASUDesign.softSpring) {
                         proxy.scrollTo(target.rawValue, anchor: .top)
                     }
                     scrollTarget = nil
@@ -191,7 +193,7 @@ struct HomeView: View {
                 Spacer()
 
                 Button {
-                    withAnimation(.easeOut(duration: ASUDesign.microDuration)) {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: ASUDesign.microDuration)) {
                         heroMuted.toggle()
                     }
                 } label: {
@@ -207,6 +209,30 @@ struct HomeView: View {
             .padding(18)
         }
         .shadow(color: .black.opacity(0.14), radius: 30, y: 16)
+    }
+
+    @ViewBuilder
+    private var catalogStatusBanner: some View {
+        if case .unavailable = store.catalogState, !store.cars.isEmpty {
+            HStack(spacing: 10) {
+                Image(systemName: "wifi.exclamationmark")
+                    .font(.system(size: 14, weight: .semibold))
+                Text(L10n.t("Показан сохранённый каталог", "Saqlangan katalog ko‘rsatilmoqda", settings.language))
+                    .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                Spacer(minLength: 8)
+                Button(L10n.t("Обновить", "Yangilash", settings.language)) {
+                    Task { await store.loadIfNeeded(force: true) }
+                }
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 46)
+            .modifier(HomeStatusGlass())
+            .padding(.horizontal, ASUDesign.pagePadding)
+            .padding(.top, 12)
+            .padding(.bottom, 4)
+        }
     }
 
     private var heroStatement: some View {
@@ -231,17 +257,12 @@ struct HomeView: View {
             .lineSpacing(5)
 
             HStack(spacing: 10) {
-                Button {
-                    openCatalog()
-                } label: {
+                ASUGlassProminentPillButton(action: { openCatalog() }) {
                     Label(L10n.t("Смотреть автомобили", "Avtomobillarni ko‘rish", settings.language), systemImage: "car.side")
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .padding(.horizontal, 16)
                         .frame(height: 48)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color(uiColor: .systemBackground))
-                .background(Color.primary, in: Capsule())
 
                 ASUGlassPillButton {
                     openURL(URL(string: "https://wa.me/\(AppConfig.whatsappPhone)")!)
@@ -281,7 +302,7 @@ struct HomeView: View {
                 ASUGlassContainer(spacing: 14) {
                     LazyHStack(spacing: 12) {
                         ASUGlassActionTile {
-                        withAnimation(ASUDesign.spring) { homeBrand = nil }
+                        withAnimation(reduceMotion ? nil : ASUDesign.spring) { homeBrand = nil }
                     } label: {
                         VStack(spacing: 12) {
                             Image(systemName: "sparkles")
@@ -300,7 +321,7 @@ struct HomeView: View {
 
                     ForEach(ASUHomeContent.brands) { item in
                         ASUGlassActionTile {
-                            withAnimation(ASUDesign.spring) {
+                            withAnimation(reduceMotion ? nil : ASUDesign.spring) {
                                 homeBrand = homeBrand == item.name ? nil : item.name
                             }
                         } label: {
@@ -869,5 +890,19 @@ struct HomeView: View {
     private func openCatalog(brand: String? = nil, status: CarStatus? = nil) {
         store.requestCatalog(brand: brand, status: status)
         selectTab(.catalog)
+    }
+}
+
+
+private struct HomeStatusGlass: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        } else {
+            content
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.18), lineWidth: 0.6))
+        }
     }
 }

@@ -3,12 +3,26 @@ import SwiftUI
 struct CatalogView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var store: AppStore
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @State private var search = ""
-    @State private var status: CatalogFilterStatus = .all
-    @State private var brand: String? = nil
-    @State private var layout: CatalogCardLayout = .grid
+    @State private var search = UserDefaults.standard.string(forKey: "ASUCatalogSearchV1") ?? ""
+    @State private var status = CatalogFilterStatus(
+        rawValue: UserDefaults.standard.string(forKey: "ASUCatalogStatusV1") ?? ""
+    ) ?? .all
+    @State private var brand: String? = UserDefaults.standard.string(forKey: "ASUCatalogBrandV1")
+    @State private var layout = CatalogCardLayout(
+        rawValue: UserDefaults.standard.string(forKey: "ASUCatalogLayoutV1") ?? ""
+    ) ?? .grid
     @State private var showFilters = false
+    @State private var path = NavigationPath()
+    @State private var deepLinkFailure = false
+    @Namespace private var carTransitionNamespace
+
+
+    private var effectiveLayout: CatalogCardLayout {
+        dynamicTypeSize.isAccessibilitySize ? .wide : layout
+    }
 
     private var filtered: [Car] {
         store.cars.filter { car in
@@ -21,7 +35,7 @@ struct CatalogView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 LazyVStack(spacing: 18) {
                     BrandHeader()
@@ -37,7 +51,10 @@ struct CatalogView: View {
             .scrollIndicators(.hidden)
             .refreshable { await store.loadIfNeeded(force: true) }
             .navigationDestination(for: Int.self) { id in
-                if let car = store.cars.first(where: { $0.id == id }) { CarDetailView(car: car) }
+                if let car = store.cars.first(where: { $0.id == id }) {
+                    CarDetailView(car: car)
+                        .modifier(CatalogNavigationZoom(id: id, namespace: carTransitionNamespace, enabled: !reduceMotion))
+                }
             }
         }
         .sheet(isPresented: $showFilters) {
@@ -45,10 +62,30 @@ struct CatalogView: View {
                 .environmentObject(settings)
                 .presentationDetents([.large])
                 .presentationCornerRadius(34)
-                .presentationBackground(.regularMaterial)
         }
-        .onAppear { applyCatalogIntent() }
+        .onAppear {
+            applyCatalogIntent()
+            Task { await openRequestedCarIfNeeded() }
+        }
         .onChange(of: store.catalogIntent?.id) { _, _ in applyCatalogIntent() }
+        .onChange(of: store.requestedCarSlug) { _, _ in
+            Task { await openRequestedCarIfNeeded() }
+        }
+        .onChange(of: search) { _, value in UserDefaults.standard.set(value, forKey: "ASUCatalogSearchV1") }
+        .onChange(of: status) { _, value in UserDefaults.standard.set(value.rawValue, forKey: "ASUCatalogStatusV1") }
+        .onChange(of: brand) { _, value in
+            if let value, !value.isEmpty { UserDefaults.standard.set(value, forKey: "ASUCatalogBrandV1") }
+            else { UserDefaults.standard.removeObject(forKey: "ASUCatalogBrandV1") }
+        }
+        .onChange(of: layout) { _, value in UserDefaults.standard.set(value.rawValue, forKey: "ASUCatalogLayoutV1") }
+        .alert(L10n.t("Автомобиль не найден", "Avtomobil topilmadi", settings.language), isPresented: $deepLinkFailure) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(L10n.t("Ссылка ведёт на автомобиль, которого больше нет в публичном каталоге.", "Havoladagi avtomobil endi ochiq katalogda mavjud emas.", settings.language))
+        }
+        .sensoryFeedback(.selection, trigger: status)
+        .sensoryFeedback(.selection, trigger: brand)
+        .sensoryFeedback(.selection, trigger: layout)
     }
 
     private var heading: some View {
@@ -102,8 +139,8 @@ struct CatalogView: View {
                 }
 
                 ForEach(ASUHomeContent.brands) { item in
-                    Button {
-                        withAnimation(ASUDesign.spring) { brand = brand == item.name ? nil : item.name }
+                    ASUGlassPillButton(isSelected: brand == item.name) {
+                        withAnimation(reduceMotion ? nil : ASUDesign.spring) { brand = brand == item.name ? nil : item.name }
                     } label: {
                         HStack(spacing: 8) {
                             Image(item.assetName)
@@ -115,15 +152,7 @@ struct CatalogView: View {
                                 .font(.system(size: 12.5, weight: .semibold, design: .rounded))
                                 .lineLimit(1)
                         }
-                        .padding(.horizontal, 14)
-                        .frame(height: 44)
-                        .foregroundStyle(brand == item.name ? Color(uiColor: .systemBackground) : Color.primary)
-                        .background {
-                            if brand == item.name { Capsule().fill(Color.primary) }
-                        }
-                        .modifier(CatalogGlassCapsule(active: brand != item.name))
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, ASUDesign.pagePadding)
@@ -137,7 +166,7 @@ struct CatalogView: View {
             HStack(spacing: 8) {
                 ForEach(CatalogFilterStatus.allCases) { item in
                     ASUGlassPillButton(isSelected: status == item) {
-                        withAnimation(ASUDesign.spring) { status = item }
+                        withAnimation(reduceMotion ? nil : ASUDesign.spring) { status = item }
                     } label: {
                         HStack(spacing: 6) {
                             if item != .all {
@@ -162,10 +191,19 @@ struct CatalogView: View {
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
             Spacer()
-            ASUGlassContainer(spacing: 8) {
-                HStack(spacing: 8) {
-                    layoutButton(.grid, symbol: "square.grid.2x2")
-                    layoutButton(.wide, symbol: "rectangle.grid.1x2")
+            if dynamicTypeSize.isAccessibilitySize {
+                ASUGlassSurface(radius: 16) {
+                    Label(L10n.t("Крупный вид", "Katta ko‘rinish", settings.language), systemImage: "textformat.size.larger")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .padding(.horizontal, 12)
+                        .frame(height: 38)
+                }
+            } else {
+                ASUGlassContainer(spacing: 8) {
+                    HStack(spacing: 8) {
+                        layoutButton(.grid, symbol: "square.grid.2x2")
+                        layoutButton(.wide, symbol: "rectangle.grid.1x2")
+                    }
                 }
             }
         }
@@ -174,16 +212,13 @@ struct CatalogView: View {
 
     private func layoutButton(_ value: CatalogCardLayout, symbol: String) -> some View {
         Button {
-            withAnimation(ASUDesign.spring) { layout = value }
+            withAnimation(reduceMotion ? nil : ASUDesign.spring) { layout = value }
         } label: {
             Image(systemName: symbol)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(layout == value ? Color(uiColor: .systemBackground) : Color.primary)
                 .frame(width: 38, height: 38)
-                .background {
-                    if layout == value { Circle().fill(Color.primary) }
-                }
-                .modifier(CatalogGlassCircle(active: layout != value))
+                .modifier(CatalogGlassCircle(selected: layout == value))
         }
         .buttonStyle(.plain)
     }
@@ -191,7 +226,7 @@ struct CatalogView: View {
     @ViewBuilder
     private var content: some View {
         if store.catalogState == .loading && store.cars.isEmpty {
-            CatalogSkeleton(layout: layout)
+            CatalogSkeleton(layout: effectiveLayout)
                 .padding(.horizontal, ASUDesign.pagePadding)
         } else if case .unavailable(let message) = store.catalogState, store.cars.isEmpty {
             ConnectionStateView(message: message) { Task { await store.loadIfNeeded(force: true) } }
@@ -210,21 +245,27 @@ struct CatalogView: View {
                 .padding(.horizontal, ASUDesign.pagePadding)
             }
 
-            if layout == .grid {
+            if effectiveLayout == .grid {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                     ForEach(filtered) { car in
-                        NavigationLink(value: car.id) { CarCard(car: car, layout: .grid) }
-                            .buttonStyle(.plain)
-                            .asuStoryTransition()
+                        NavigationLink(value: car.id) {
+                            CarCard(car: car, layout: .grid)
+                                .modifier(CatalogMatchedSource(id: car.id, namespace: carTransitionNamespace, enabled: !reduceMotion))
+                        }
+                        .buttonStyle(.plain)
+                        .asuStoryTransition()
                     }
                 }
                 .padding(.horizontal, ASUDesign.pagePadding)
             } else {
                 LazyVStack(spacing: 14) {
                     ForEach(filtered) { car in
-                        NavigationLink(value: car.id) { CarCard(car: car, layout: .wide) }
-                            .buttonStyle(.plain)
-                            .asuStoryTransition()
+                        NavigationLink(value: car.id) {
+                            CarCard(car: car, layout: .wide)
+                                .modifier(CatalogMatchedSource(id: car.id, namespace: carTransitionNamespace, enabled: !reduceMotion))
+                        }
+                        .buttonStyle(.plain)
+                        .asuStoryTransition()
                     }
                 }
                 .padding(.horizontal, ASUDesign.pagePadding)
@@ -249,7 +290,7 @@ struct CatalogView: View {
     }
 
     private func resetFilters() {
-        withAnimation(ASUDesign.spring) {
+        withAnimation(reduceMotion ? nil : ASUDesign.spring) {
             search = ""
             status = .all
             brand = nil
@@ -261,13 +302,65 @@ struct CatalogView: View {
         brand = intent.brand
         if let target = intent.status {
             status = target == .inStock ? .available : CatalogFilterStatus(carStatus: target)
+        } else {
+            status = .all
         }
         search = ""
         store.clearCatalogIntent()
     }
+
+    @MainActor
+    private func openRequestedCarIfNeeded() async {
+        guard let requestedSlug = store.requestedCarSlug else { return }
+        if store.cars.isEmpty { await store.loadIfNeeded() }
+
+        let target = store.cars.first { car in
+            guard let slug = car.slug else { return false }
+            return slug.caseInsensitiveCompare(requestedSlug) == .orderedSame
+        }
+
+        store.consumeRequestedCar()
+        guard let target else {
+            deepLinkFailure = true
+            return
+        }
+
+        path = NavigationPath()
+        path.append(target.id)
+    }
 }
 
-enum CatalogFilterStatus: String, CaseIterable, Identifiable {
+private struct CatalogMatchedSource: ViewModifier {
+    let id: Int
+    let namespace: Namespace.ID
+    let enabled: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *), enabled {
+            content.matchedTransitionSource(id: id, in: namespace)
+        } else {
+            content
+        }
+    }
+}
+
+private struct CatalogNavigationZoom: ViewModifier {
+    let id: Int
+    let namespace: Namespace.ID
+    let enabled: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *), enabled {
+            content.navigationTransition(.zoom(sourceID: id, in: namespace))
+        } else {
+            content
+        }
+    }
+}
+
+enum CatalogFilterStatus: String, CaseIterable, Identifiable, Hashable {
     case all
     case available
     case inShowroom = "in_showroom"
@@ -394,10 +487,7 @@ private struct CatalogFilterSheet: View {
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity)
             .frame(height: 46)
-            .background {
-                if selected { RoundedRectangle(cornerRadius: 17, style: .continuous).fill(Color.primary) }
-            }
-            .modifier(CatalogGlassRounded(active: !selected))
+            .modifier(CatalogGlassRounded(selected: selected))
         }
         .buttonStyle(.plain)
     }
@@ -427,33 +517,34 @@ private struct CatalogSkeleton: View {
     }
 }
 
-private struct CatalogGlassCapsule: ViewModifier {
-    let active: Bool
-    @ViewBuilder func body(content: Content) -> some View {
-        if active {
-            if #available(iOS 26.0, *) { content.glassEffect(.regular.interactive(), in: Capsule()) }
-            else { content.background(.ultraThinMaterial, in: Capsule()).overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.6)) }
-        } else { content }
-    }
-}
-
 private struct CatalogGlassCircle: ViewModifier {
-    let active: Bool
-    @ViewBuilder func body(content: Content) -> some View {
-        if active {
-            if #available(iOS 26.0, *) { content.glassEffect(.regular.interactive(), in: Circle()) }
+    let selected: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            if selected { content.glassEffect(.regular.tint(Color.primary).interactive(), in: Circle()) }
+            else { content.glassEffect(.regular.interactive(), in: Circle()) }
+        } else {
+            if selected { content.background(Color.primary, in: Circle()) }
             else { content.background(.ultraThinMaterial, in: Circle()).overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 0.6)) }
-        } else { content }
+        }
     }
 }
 
 private struct CatalogGlassRounded: ViewModifier {
-    let active: Bool
-    @ViewBuilder func body(content: Content) -> some View {
-        if active {
-            if #available(iOS 26.0, *) { content.glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 17, style: .continuous)) }
-            else { content.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous)).overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(Color.white.opacity(0.2), lineWidth: 0.6)) }
-        } else { content }
+    let selected: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 17, style: .continuous)
+        if #available(iOS 26.0, *) {
+            if selected { content.glassEffect(.regular.tint(Color.primary).interactive(), in: shape) }
+            else { content.glassEffect(.regular.interactive(), in: shape) }
+        } else {
+            if selected { content.background(Color.primary, in: shape) }
+            else { content.background(.ultraThinMaterial, in: shape).overlay(shape.stroke(Color.white.opacity(0.2), lineWidth: 0.6)) }
+        }
     }
 }
 
@@ -472,7 +563,7 @@ private struct ConnectionStateView: View {
             }
             Text(L10n.t("Каталог недоступен", "Katalog mavjud emas", settings.language))
                 .font(.system(size: 24, weight: .bold, design: .rounded))
-            Text(message)
+            Text(settings.language == .ru ? message : "Auto Sale Umar katalogiga ulanish imkoni bo‘lmadi. Internet aloqasini tekshirib, qayta urinib ko‘ring.")
                 .font(.system(size: 14.5))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
