@@ -1,0 +1,4 @@
+AUTO SALE UMAR — NATIVE SWIFTUI CUMULATIVE REPAIR
+Includes Phase I Foundation + Home, Phase II Catalog + Car Detail, Phase III Smart Consultant + Client Services.
+Repairs CI failures from runs 91924871490 and 91935266346.
+This update is self-contained and does not depend on either failed phase having been committed.

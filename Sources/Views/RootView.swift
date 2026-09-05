@@ -21,24 +21,23 @@ struct RootView: View {
                     .tag(AppTab.favorites)
                     .tabItem { Label(AppTab.favorites.title(settings.language), systemImage: AppTab.favorites.symbol) }
 
-                MoreView()
+                MoreView(selectTab: { selection = $0 })
                     .tag(AppTab.more)
                     .tabItem { Label(AppTab.more.title(settings.language), systemImage: AppTab.more.symbol) }
             }
             .tint(.primary)
 
             if showsLaunch {
-                LaunchOverlay()
-                    .transition(.opacity)
-                    .zIndex(100)
+                LaunchOverlay {
+                    withAnimation(.easeInOut(duration: ASUDesign.navigationDuration)) {
+                        showsLaunch = false
+                    }
+                }
+                .transition(.opacity)
+                .zIndex(100)
             }
         }
         .task { await store.loadIfNeeded() }
         .sensoryFeedback(.selection, trigger: selection)
-        .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) {
-                withAnimation(.easeInOut(duration: 0.28)) { showsLaunch = false }
-            }
-        }
     }
 }

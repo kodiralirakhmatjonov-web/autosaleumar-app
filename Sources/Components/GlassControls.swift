@@ -1,5 +1,27 @@
 import SwiftUI
 
+struct ASUGlassContainer<Content: View>: View {
+    var spacing: CGFloat? = 12
+    let content: Content
+
+    init(spacing: CGFloat? = 12, @ViewBuilder content: () -> Content) {
+        self.spacing = spacing
+        self.content = content()
+    }
+
+    @ViewBuilder
+    var body: some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: spacing) {
+                content
+            }
+        } else {
+            content
+        }
+    }
+}
+
+
 struct ASUGlassIconButton: View {
     let symbol: String
     var size: CGFloat = 46
@@ -14,18 +36,40 @@ struct ASUGlassIconButton: View {
                 .symbolRenderingMode(.hierarchical)
                 .frame(width: size, height: size)
                 .contentShape(Circle())
-                .modifier(ASUGlassCircle())
+                .modifier(ASUGlassCircle(interactive: true))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel ?? symbol)
     }
 }
 
+struct ASUGlassCircleSurface<Content: View>: View {
+    var size: CGFloat = 46
+    let content: Content
+
+    init(size: CGFloat = 46, @ViewBuilder content: () -> Content) {
+        self.size = size
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .frame(width: size, height: size)
+            .modifier(ASUGlassCircle(interactive: false))
+    }
+}
+
 private struct ASUGlassCircle: ViewModifier {
+    let interactive: Bool
+
     @ViewBuilder
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            content.glassEffect(.regular.interactive(), in: Circle())
+            if interactive {
+                content.glassEffect(.regular.interactive(), in: Circle())
+            } else {
+                content.glassEffect(.regular, in: Circle())
+            }
         } else {
             content
                 .background(.ultraThinMaterial, in: Circle())
@@ -92,6 +136,74 @@ struct ASUGlassSurface<Content: View>: View {
 
     var body: some View {
         content.modifier(ASUGlassRounded(radius: radius, interactive: false))
+    }
+}
+
+struct ASUGlassPanel<Content: View>: View {
+    var radius: CGFloat = 30
+    var padding: CGFloat = 0
+    let content: Content
+
+    init(radius: CGFloat = 30, padding: CGFloat = 0, @ViewBuilder content: () -> Content) {
+        self.radius = radius
+        self.padding = padding
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .padding(padding)
+            .modifier(ASUGlassRounded(radius: radius, interactive: false))
+    }
+}
+
+struct ASUGlassPillButton<Label: View>: View {
+    var isSelected = false
+    let action: () -> Void
+    let label: Label
+
+    init(isSelected: Bool = false, action: @escaping () -> Void, @ViewBuilder label: () -> Label) {
+        self.isSelected = isSelected
+        self.action = action
+        self.label = label()
+    }
+
+    var body: some View {
+        Button(action: action) {
+            label
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(isSelected ? Color(uiColor: .systemBackground) : Color.primary)
+                .padding(.horizontal, 16)
+                .frame(height: 42)
+                .background {
+                    if isSelected {
+                        Capsule().fill(Color.primary)
+                    }
+                }
+                .modifier(ASUGlassCapsuleFallbackOnly(active: !isSelected))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct ASUGlassCapsuleFallbackOnly: ViewModifier {
+    let active: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if active {
+            if #available(iOS 26.0, *) {
+                content.glassEffect(.regular.interactive(), in: Capsule())
+            } else {
+                content
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.20), lineWidth: 0.7))
+                    .shadow(color: .black.opacity(0.06), radius: 12, y: 5)
+            }
+        } else {
+            content
+        }
     }
 }
 

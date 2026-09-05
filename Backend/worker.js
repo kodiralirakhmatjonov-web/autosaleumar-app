@@ -16,8 +16,6 @@ const CAR_SELECT = `
     c.model,
     c.model_year AS year,
     c.trim,
-    c.vin,
-    c.stock_number,
     c.status,
     c.source_country AS country_code,
     c.arrival_date,
@@ -31,7 +29,9 @@ const CAR_SELECT = `
     s.transmission_ru AS transmission,
     s.seats,
     v.color_name_ru AS exterior_color,
+    st.exterior_swatch,
     v.interior_color_ru AS interior_color,
+    st.interior_swatch,
     c.short_description_ru,
     c.short_description_uz,
     c.description_ru,
@@ -51,14 +51,18 @@ const CAR_SELECT = `
     ORDER BY cv.is_default DESC, cv.sort_order ASC, cv.id ASC
     LIMIT 1
   )
+  LEFT JOIN car_variant_style st ON st.variant_id = v.id
 `;
 
-function proxyURL(origin, mediaID) {
+function variantMediaURL(origin, mediaID) {
+  return `${origin}/v1/variant-media/${encodeURIComponent(String(mediaID))}`;
+}
+
+function legacyMediaURL(origin, mediaID) {
   return `${origin}/v1/media/${encodeURIComponent(String(mediaID))}`;
 }
 
-function toCar(row, mediaRows, origin) {
-  const urls = mediaRows.map((item) => proxyURL(origin, item.id));
+function toPublicCar(row, images) {
   return {
     id: row.id,
     slug: row.slug,
@@ -66,8 +70,6 @@ function toCar(row, mediaRows, origin) {
     model: row.model,
     year: row.year,
     trim: row.trim,
-    vin: row.vin,
-    stockNumber: row.stock_number,
     status: row.status,
     countryCode: row.country_code,
     arrivalDate: row.arrival_date,
@@ -81,7 +83,9 @@ function toCar(row, mediaRows, origin) {
     transmission: row.transmission,
     seats: row.seats,
     exteriorColor: row.exterior_color,
+    exteriorSwatch: row.exterior_swatch || null,
     interiorColor: row.interior_color,
+    interiorSwatch: row.interior_swatch || null,
     shortDescriptionRu: row.short_description_ru,
     shortDescriptionUz: row.short_description_uz,
     descriptionRu: row.description_ru,
@@ -90,10 +94,68 @@ function toCar(row, mediaRows, origin) {
     isNewArrival: row.is_new_arrival === 1,
     isPublic: row.is_public === 1,
     isFeatured: row.is_featured === 1,
-    coverUrl: urls[0] || null,
-    images: urls,
+    coverUrl: images[0] || null,
+    images,
     updatedAt: row.updated_at,
   };
+}
+
+async function loadListMedia(env, carIDs, origin) {
+  const byCar = new Map();
+  if (!carIDs.length) return byCar;
+  const placeholders = carIDs.map((_, index) => `?${index + 1}`).join(",");
+
+  try {
+    const result = await env.DB.prepare(`
+      SELECT
+        m.id, m.car_id, m.variant_id, m.object_key, m.public_url,
+        m.photo_group, m.is_cover, m.sort_order,
+        v.is_default, v.sort_order AS variant_sort
+      FROM car_variant_media m
+      INNER JOIN car_variants v ON v.id = m.variant_id
+      WHERE m.car_id IN (${placeholders})
+        AND m.photo_group = 'exterior'
+        AND m.object_key NOT LIKE '%/detail/%'
+      ORDER BY m.car_id ASC, v.is_default DESC, v.sort_order ASC, v.id ASC,
+               m.is_cover DESC, m.sort_order ASC, m.id ASC
+    `).bind(...carIDs).all();
+
+    for (const item of result.results || []) {
+      const carID = Number(item.car_id);
+      if (!Number.isFinite(carID) || item.id == null) continue;
+      const bucket = byCar.get(carID) || [];
+      if (bucket.length < 12) bucket.push(variantMediaURL(origin, item.id));
+      byCar.set(carID, bucket);
+    }
+  } catch (error) {
+    console.warn("Normalized variant media lookup failed; trying legacy media", error);
+  }
+
+  const missing = carIDs.filter((id) => !(byCar.get(id)?.length));
+  if (!missing.length) return byCar;
+
+  try {
+    const fallbackPlaceholders = missing.map((_, index) => `?${index + 1}`).join(",");
+    const legacy = await env.DB.prepare(`
+      SELECT id, car_id
+      FROM car_media
+      WHERE media_type = 'image'
+        AND car_id IN (${fallbackPlaceholders})
+      ORDER BY car_id ASC, is_cover DESC, sort_order ASC, id ASC
+    `).bind(...missing).all();
+
+    for (const item of legacy.results || []) {
+      const carID = Number(item.car_id);
+      if (!Number.isFinite(carID) || item.id == null) continue;
+      const bucket = byCar.get(carID) || [];
+      if (bucket.length < 12) bucket.push(legacyMediaURL(origin, item.id));
+      byCar.set(carID, bucket);
+    }
+  } catch (error) {
+    console.warn("Legacy media fallback lookup failed", error);
+  }
+
+  return byCar;
 }
 
 async function listCars(env, origin) {
@@ -101,6 +163,7 @@ async function listCars(env, origin) {
     WHERE c.is_published = 1
       AND c.status != 'hidden'
     ORDER BY
+      c.is_featured DESC,
       CASE c.status
         WHEN 'in_showroom' THEN 0
         WHEN 'in_stock' THEN 1
@@ -110,7 +173,6 @@ async function listCars(env, origin) {
         WHEN 'sold' THEN 5
         ELSE 6
       END,
-      c.is_featured DESC,
       c.updated_at DESC,
       c.id DESC
     LIMIT 100
@@ -118,27 +180,122 @@ async function listCars(env, origin) {
 
   const rows = Array.isArray(list.results) ? list.results : [];
   if (!rows.length) return [];
-
   const ids = rows.map((row) => Number(row.id)).filter(Number.isFinite);
-  const placeholders = ids.map((_, index) => `?${index + 1}`).join(",");
-  const mediaResult = await env.DB.prepare(`
-      SELECT *
-      FROM car_media
-      WHERE media_type = 'image'
-        AND car_id IN (${placeholders})
-      ORDER BY car_id ASC, is_cover DESC, sort_order ASC, id ASC
-    `).bind(...ids).all();
+  const byCar = await loadListMedia(env, ids, origin);
+  return rows.map((row) => toPublicCar(row, byCar.get(Number(row.id)) || []));
+}
 
-  const byCar = new Map();
-  for (const item of mediaResult.results || []) {
-    const carID = Number(item.car_id);
-    if (!Number.isFinite(carID) || item.id == null) continue;
-    const bucket = byCar.get(carID) || [];
-    bucket.push(item);
-    byCar.set(carID, bucket);
+async function carDetailBySlug(env, origin, slug) {
+  const row = await env.DB.prepare(`${CAR_SELECT}
+    WHERE c.slug = ?1
+      AND c.is_published = 1
+      AND c.status != 'hidden'
+    LIMIT 1
+  `).bind(slug).first();
+
+  if (!row) return null;
+
+  const [variantResult, mediaResult, performance, links, weeklyViews] = await Promise.all([
+    env.DB.prepare(`
+      SELECT
+        v.id,
+        v.color_name_ru AS exterior_color_name,
+        v.interior_color_ru AS interior_color_name,
+        st.exterior_swatch,
+        st.interior_swatch,
+        v.is_default,
+        v.sort_order
+      FROM car_variants v
+      LEFT JOIN car_variant_style st ON st.variant_id = v.id
+      WHERE v.car_id = ?1
+      ORDER BY v.is_default DESC, v.sort_order ASC, v.id ASC
+    `).bind(row.id).all(),
+    env.DB.prepare(`
+      SELECT
+        id, variant_id, object_key, public_url,
+        CASE WHEN object_key LIKE '%/detail/%' THEN 'detail' ELSE photo_group END AS photo_group,
+        is_cover, sort_order
+      FROM car_variant_media
+      WHERE car_id = ?1
+      ORDER BY variant_id ASC, photo_group ASC, is_cover DESC, sort_order ASC, id ASC
+    `).bind(row.id).all(),
+    env.DB.prepare(`
+      SELECT
+        engine_displacement_l, horsepower_hp, torque_nm, acceleration_0_100_s,
+        top_speed_kmh, fuel_consumption_l_100km, electric_range_km
+      FROM car_performance
+      WHERE car_id = ?1
+      LIMIT 1
+    `).bind(row.id).first(),
+    env.DB.prepare(`
+      SELECT instagram_url
+      FROM car_links
+      WHERE car_id = ?1
+      LIMIT 1
+    `).bind(row.id).first(),
+    env.DB.prepare(`
+      SELECT COALESCE(SUM(views), 0) AS total
+      FROM car_view_daily
+      WHERE car_id = ?1
+        AND view_date >= date('now', '-6 days')
+    `).bind(row.id).first().catch(() => ({ total: 0 })),
+  ]);
+
+  const mediaByVariant = new Map();
+  for (const media of mediaResult.results || []) {
+    const current = mediaByVariant.get(media.variant_id) || [];
+    current.push(media);
+    mediaByVariant.set(media.variant_id, current);
   }
 
-  return rows.map((row) => toCar(row, byCar.get(Number(row.id)) || [], origin));
+  const variants = (variantResult.results || []).map((variant) => {
+    const media = mediaByVariant.get(variant.id) || [];
+    const mapPhotos = (group) => media
+      .filter((item) => item.photo_group === group)
+      .map((item) => ({
+        id: item.id,
+        url: variantMediaURL(origin, item.id),
+        isCover: item.is_cover === 1,
+        sortOrder: item.sort_order || 0,
+      }));
+
+    return {
+      id: variant.id,
+      exteriorColorName: variant.exterior_color_name,
+      exteriorSwatch: variant.exterior_swatch || "#111214",
+      interiorColorName: variant.interior_color_name,
+      interiorSwatch: variant.interior_swatch || "#111214",
+      photos: mapPhotos("exterior"),
+      interiorPhotos: mapPhotos("interior"),
+      detailPhotos: mapPhotos("detail"),
+    };
+  });
+
+  let coverUrl = null;
+  for (const variant of variants) {
+    const cover = variant.photos.find((photo) => photo.isCover) || variant.photos[0];
+    if (cover?.url) { coverUrl = cover.url; break; }
+  }
+
+  if (!coverUrl) {
+    const fallback = await loadListMedia(env, [Number(row.id)], origin);
+    coverUrl = fallback.get(Number(row.id))?.[0] || null;
+  }
+
+  return {
+    ...toPublicCar(row, coverUrl ? [coverUrl] : []),
+    coverUrl,
+    weeklyViews: Number(weeklyViews?.total || 0),
+    engineDisplacementL: performance?.engine_displacement_l ?? null,
+    horsepowerHp: performance?.horsepower_hp ?? null,
+    torqueNm: performance?.torque_nm ?? null,
+    acceleration0100: performance?.acceleration_0_100_s ?? null,
+    topSpeedKmh: performance?.top_speed_kmh ?? null,
+    fuelConsumptionL100: performance?.fuel_consumption_l_100km ?? null,
+    electricRangeKm: performance?.electric_range_km ?? null,
+    instagramUrl: links?.instagram_url ?? null,
+    variants,
+  };
 }
 
 function mediaBindings(env) {
@@ -149,33 +306,27 @@ function mediaBindings(env) {
 }
 
 function decodeSafe(value) {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
+  try { return decodeURIComponent(value); }
+  catch { return value; }
 }
 
 function addKeyVariant(set, raw) {
   if (typeof raw !== "string") return;
-  let value = raw.trim();
+  const value = raw.trim();
   if (!value) return;
 
   const push = (candidate) => {
     if (typeof candidate !== "string") return;
-    let item = decodeSafe(candidate.trim()).replace(/^\/+/, "");
-    if (!item) return;
-    set.add(item);
+    const item = decodeSafe(candidate.trim()).replace(/^\/+/, "");
+    if (item) set.add(item);
   };
 
   push(value);
-
   if (/^https?:\/\//i.test(value)) {
     try {
       const url = new URL(value);
-      const pathname = url.pathname || "";
-      push(pathname);
-      const segments = pathname.split("/").filter(Boolean);
+      push(url.pathname || "");
+      const segments = (url.pathname || "").split("/").filter(Boolean);
       if (segments.length > 1) push(segments.slice(1).join("/"));
       if (segments.length > 2) push(segments.slice(2).join("/"));
     } catch {}
@@ -189,22 +340,9 @@ function addKeyVariant(set, raw) {
 
 function candidateKeys(row) {
   const keys = new Set();
-  const fields = [
-    "object_key",
-    "objectKey",
-    "r2_key",
-    "r2Key",
-    "storage_key",
-    "storageKey",
-    "file_key",
-    "fileKey",
-    "key",
-    "path",
-    "public_url",
-    "publicUrl",
-    "url",
-  ];
-  for (const field of fields) addKeyVariant(keys, row?.[field]);
+  for (const field of ["object_key", "objectKey", "r2_key", "r2Key", "storage_key", "storageKey", "file_key", "fileKey", "key", "path", "public_url", "publicUrl", "url"]) {
+    addKeyVariant(keys, row?.[field]);
+  }
   return [...keys];
 }
 
@@ -225,23 +363,15 @@ async function responseFromR2(object, key, request) {
   if (object.httpEtag) headers.set("etag", object.httpEtag);
   headers.set("cache-control", "public, max-age=31536000, immutable");
   headers.set("accept-ranges", "bytes");
-
+  headers.set("x-content-type-options", "nosniff");
   if (request.method === "HEAD") return new Response(null, { status: 200, headers });
   return new Response(object.body, { status: 200, headers });
 }
 
-async function serveMedia(request, env, mediaID) {
-  const id = Number(mediaID);
+async function serveRowMedia(request, env, table, id) {
   if (!Number.isInteger(id) || id <= 0) return json({ success: false, error: "Invalid media id" }, 400);
 
-  const row = await env.DB.prepare(`
-      SELECT *
-      FROM car_media
-      WHERE id = ?1
-        AND media_type = 'image'
-      LIMIT 1
-    `).bind(id).first();
-
+  const row = await env.DB.prepare(`SELECT * FROM ${table} WHERE id = ?1 LIMIT 1`).bind(id).first();
   if (!row) return json({ success: false, error: "Media not found" }, 404);
 
   const publicURL = row.public_url || row.publicUrl || row.url;
@@ -255,6 +385,7 @@ async function serveMedia(request, env, mediaID) {
       if (upstream.ok && type.toLowerCase().startsWith("image/")) {
         const headers = new Headers(upstream.headers);
         headers.set("cache-control", "public, max-age=31536000, immutable");
+        headers.set("x-content-type-options", "nosniff");
         if (request.method === "HEAD") return new Response(null, { status: 200, headers });
         return new Response(upstream.body, { status: 200, headers });
       }
@@ -263,7 +394,6 @@ async function serveMedia(request, env, mediaID) {
 
   const keys = candidateKeys(row);
   const bindings = mediaBindings(env);
-
   for (const key of keys) {
     for (const bucket of bindings) {
       try {
@@ -273,16 +403,13 @@ async function serveMedia(request, env, mediaID) {
     }
   }
 
-  return json(
-    {
-      success: false,
-      error: "Media object not found in bound R2 buckets",
-      mediaId: id,
-      keyCandidates: keys.length,
-      bucketBindings: bindings.length,
-    },
-    404,
-  );
+  return json({
+    success: false,
+    error: "Media object not found in bound R2 buckets",
+    mediaId: id,
+    keyCandidates: keys.length,
+    bucketBindings: bindings.length,
+  }, 404);
 }
 
 export default {
@@ -292,18 +419,13 @@ export default {
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: { allow: "GET, HEAD, OPTIONS" } });
     }
-
     if (!["GET", "HEAD"].includes(request.method)) {
       return json({ success: false, error: "Method not allowed" }, 405, { allow: "GET, HEAD, OPTIONS" });
     }
     if (!env.DB) return json({ success: false, error: "D1 binding DB is missing" }, 500);
 
     if (url.pathname === "/health" || url.pathname === "/v1/health") {
-      return json({
-        success: true,
-        service: "autosaleumar-app-api",
-        r2Bindings: mediaBindings(env).length,
-      });
+      return json({ success: true, service: "autosaleumar-app-api", r2Bindings: mediaBindings(env).length });
     }
 
     if (url.pathname === "/v1/cars") {
@@ -316,12 +438,34 @@ export default {
       }
     }
 
-    const match = url.pathname.match(/^\/v1\/media\/(\d+)$/);
-    if (match) {
+    const carMatch = url.pathname.match(/^\/v1\/cars\/([^/]+)$/);
+    if (carMatch) {
       try {
-        return await serveMedia(request, env, match[1]);
+        const slug = decodeSafe(carMatch[1]).trim();
+        if (!slug || slug.length > 140) return json({ success: false, error: "Invalid slug" }, 400);
+        const car = await carDetailBySlug(env, url.origin, slug);
+        if (!car) return json({ success: false, error: "Car not found" }, 404);
+        return json({ success: true, car });
       } catch (error) {
-        console.error("ASU media proxy failed", error);
+        console.error("ASU app detail failed", error);
+        return json({ success: false, error: "Car detail unavailable" }, 500);
+      }
+    }
+
+    const variantMediaMatch = url.pathname.match(/^\/v1\/variant-media\/(\d+)$/);
+    if (variantMediaMatch) {
+      try { return await serveRowMedia(request, env, "car_variant_media", Number(variantMediaMatch[1])); }
+      catch (error) {
+        console.error("ASU variant media proxy failed", error);
+        return json({ success: false, error: "Media unavailable" }, 500);
+      }
+    }
+
+    const legacyMediaMatch = url.pathname.match(/^\/v1\/media\/(\d+)$/);
+    if (legacyMediaMatch) {
+      try { return await serveRowMedia(request, env, "car_media", Number(legacyMediaMatch[1])); }
+      catch (error) {
+        console.error("ASU legacy media proxy failed", error);
         return json({ success: false, error: "Media unavailable" }, 500);
       }
     }

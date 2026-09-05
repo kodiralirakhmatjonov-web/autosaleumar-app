@@ -1,6 +1,31 @@
-AUTO SALE UMAR APP — R2 MEDIA PROXY UPDATE
+AUTO SALE UMAR — PHASE I+II+III CUMULATIVE REPAIR
 
-This update changes only the app repository backend worker.
-The website repository is untouched.
-The iOS UI/source is untouched.
-The app API now returns /v1/media/:id image URLs backed by existing car_media records and existing R2 buckets.
+WHY THIS ZIP EXISTS
+- Run 91924871490 DID extract/apply the ZIP in the runner workspace, then Xcode compile gate rejected HomeComponents.swift: invalid SwiftUI frame(width:minHeight:) overload.
+- Because that compile gate failed, Phase I was never committed to main.
+- Run 91935266346 also DID extract/apply its ZIP, then Xcode compile gate rejected Phase II because it referenced Phase I types that were not present in main: ASUGlassContainer, ASUGlassCircleSurface, ASUGlassPillButton, ASUHomeContent, plus catalog state views.
+
+REPAIR
+- One cumulative/self-contained update containing Phase I + II + III together.
+- Sources and Resources are clean-replaced via DELETE.txt before copy, preventing stale/duplicate source files.
+- HomeComponents invalid frame call repaired as two legal frame modifiers.
+- Phase I shared Liquid Glass / HomeContent / HomeComponents / VideoSurface files included.
+- Missing ConnectionStateView and EmptyCatalogView restored into the Phase II catalog implementation.
+- Phase II Catalog/Car Detail/API/R2 worker included.
+- Phase III Smart Consultant / Compare / Client Services included.
+- Website repository untouched.
+- .github and Signing are not included.
+
+LOCAL QA
+- Swift syntax parse: PASS (29/29 files).
+- Foundation core semantic typecheck (L10n + Models + ClientModels + AppConfig + Persistence + APIClient + ClientAPI): PASS.
+- Custom *View reference scan: no unresolved project views after repair.
+- Backend worker node --check: PASS.
+- Asset catalog JSON: PASS.
+- project.yml YAML: PASS.
+- ZIP path traversal/protected path scan: PASS.
+- Exact safe-apply workflow simulation over an older Auto Sale Umar app repository: PASS.
+- Post-apply stale Web/LiquidGlassTabBar source removal: PASS.
+
+FINAL BUILD LIMITATION
+Full SwiftUI semantic compilation requires Xcode 26 on macOS. The existing GitHub macos-26 compile gate remains authoritative.
