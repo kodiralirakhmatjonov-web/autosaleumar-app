@@ -8,7 +8,7 @@ enum CatalogCardLayout: String, CaseIterable, Hashable {
 struct CarImage: View {
     let url: URL?
     let height: CGFloat
-    var fill = false
+    var fill = true
 
     var body: some View {
         ASURemoteImage(
@@ -29,7 +29,7 @@ struct ASUCarCardGallery: View {
 
     let car: Car
     let height: CGFloat
-    var fill = false
+    var fill = true
 
     @State private var selectedIndex = 0
     @State private var detailImageURLs: [URL] = []

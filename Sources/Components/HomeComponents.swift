@@ -179,12 +179,13 @@ struct ASUDigitalStoryCard: View {
     let story: ASUDigitalStory
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 0) {
             Image(story.assetName)
                 .resizable()
-                .scaledToFit()
+                .scaledToFill()
                 .frame(maxWidth: .infinity)
                 .frame(height: 260)
+                .clipped()
 
             VStack(alignment: .leading, spacing: 7) {
                 Text(story.title(settings.language))
@@ -194,8 +195,8 @@ struct ASUDigitalStoryCard: View {
                     .foregroundStyle(.secondary)
                     .lineSpacing(3)
             }
+            .padding(16)
         }
-        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

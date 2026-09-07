@@ -445,7 +445,7 @@ struct BookingView: View {
 
             if let selectedCar {
                 HStack(spacing: 12) {
-                    ASURemoteImage(url: selectedCar.primaryImageURL, contentMode: .fit)
+                    ASURemoteImage(url: selectedCar.primaryImageURL, contentMode: .fill)
                         .frame(width: 112, height: 76)
                         .background(ASUDesign.gallery)
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))

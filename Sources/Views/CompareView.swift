@@ -139,7 +139,7 @@ struct CompareView: View {
     private func selectedCard(_ car: Car) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             ZStack(alignment: .topTrailing) {
-                ASURemoteImage(url: car.primaryImageURL, contentMode: .fit)
+                ASURemoteImage(url: car.primaryImageURL, contentMode: .fill)
                     .frame(width: 178, height: 110)
                     .background(ASUDesign.gallery)
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -456,7 +456,7 @@ struct CompareView: View {
                             if store.compareCars.count >= 3 { showPicker = false }
                         } label: {
                             HStack(spacing: 12) {
-                                ASURemoteImage(url: car.primaryImageURL, contentMode: .fit)
+                                ASURemoteImage(url: car.primaryImageURL, contentMode: .fill)
                                     .frame(width: 96, height: 70)
                                     .background(ASUDesign.gallery)
                                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
