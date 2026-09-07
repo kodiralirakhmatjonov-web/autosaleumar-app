@@ -25,6 +25,7 @@ final class AppSettings: ObservableObject {
         static let language = "ASULanguage"
         static let theme = "ASUTheme"
         static let visitReminders = "ASUVisitRemindersEnabled"
+        static let statusNotifications = "ASUStatusNotificationsEnabled"
     }
 
     @Published var language: AppLanguage { didSet { UserDefaults.standard.set(language.rawValue, forKey: Keys.language) } }
@@ -40,6 +41,14 @@ final class AppSettings: ObservableObject {
             }
         }
     }
+    @Published var statusNotificationsEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(statusNotificationsEnabled, forKey: Keys.statusNotifications)
+            if statusNotificationsEnabled {
+                Task { _ = await ASUStatusNotifications.ensureAuthorization() }
+            }
+        }
+    }
 
     init() {
         language = AppLanguage(rawValue: UserDefaults.standard.string(forKey: Keys.language) ?? "") ?? .ru
@@ -48,6 +57,11 @@ final class AppSettings: ObservableObject {
             visitRemindersEnabled = true
         } else {
             visitRemindersEnabled = UserDefaults.standard.bool(forKey: Keys.visitReminders)
+        }
+        if UserDefaults.standard.object(forKey: Keys.statusNotifications) == nil {
+            statusNotificationsEnabled = true
+        } else {
+            statusNotificationsEnabled = UserDefaults.standard.bool(forKey: Keys.statusNotifications)
         }
     }
 

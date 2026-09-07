@@ -16,6 +16,8 @@ struct ProfileView: View {
     @State private var showBooking = false
     @State private var showCompare = false
     @State private var highlightedActivityCode: String?
+    @State private var isSyncingActivities = false
+    @State private var syncNotice: String?
 
     let selectTab: (AppTab) -> Void
 
@@ -50,6 +52,15 @@ struct ProfileView: View {
                 case .trust: TrustView(openCatalog: { selectTab(.catalog) })
                 case .gift: RamadanGiftView()
                 }
+            }
+        }
+        .refreshable { await syncActivities(showFeedback: false) }
+        .task {
+            await syncActivities(showFeedback: false)
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(90))
+                guard !Task.isCancelled else { break }
+                await syncActivities(showFeedback: false)
             }
         }
         .sheet(isPresented: $showProfileEditor, onDismiss: reloadLocalState) {
@@ -183,119 +194,220 @@ struct ProfileView: View {
     }
 
     private var activitySection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
                 sectionKicker(L10n.t("МОИ ОБРАЩЕНИЯ", "MUROJAATLARIM", settings.language))
                 Spacer()
                 if !activities.isEmpty {
-                    Text(L10n.t("На этом iPhone", "Ushbu iPhone’da", settings.language))
-                        .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                        .foregroundStyle(.tertiary)
+                    Button {
+                        Task { await syncActivities(showFeedback: true) }
+                    } label: {
+                        HStack(spacing: 7) {
+                            if isSyncingActivities {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Circle().fill(ASUDesign.success).frame(width: 6, height: 6)
+                            }
+                            Text(isSyncingActivities
+                                 ? L10n.t("Обновляем", "Yangilanmoqda", settings.language)
+                                 : L10n.t("Control System", "Control System", settings.language))
+                                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                        }
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 11)
+                        .frame(height: 34)
+                        .background(Color.primary.opacity(0.045), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isSyncingActivities)
                 }
             }
 
             if activities.isEmpty {
-                VStack(spacing: 14) {
-                    ASUGlassCircleSurface(size: 66) {
-                        Image(systemName: "text.bubble")
-                            .font(.system(size: 24, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
-                    Text(L10n.t("История пока пустая", "Tarix hozircha bo‘sh", settings.language))
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                    Text(L10n.t(
-                        "После персонального подбора или бронирования визита код обращения сохранится здесь.",
-                        "Shaxsiy tanlov yoki tashrif band qilingandan keyin murojaat kodi shu yerda saqlanadi.",
-                        settings.language
-                    ))
-                    .font(.system(size: 13.5))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(3)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 26)
-                .padding(.horizontal, 18)
-                .asuCard(radius: 28)
+                emptyActivities
             } else {
-                VStack(spacing: 0) {
+                clientCenterOverview
+                if let syncNotice {
+                    Text(syncNotice)
+                        .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 4)
+                        .transition(.opacity)
+                }
+                VStack(spacing: 12) {
                     ForEach(displayedActivities) { activity in
-                        activityRow(activity)
-                        if activity.id != displayedActivities.last?.id { Divider().padding(.leading, 56) }
+                        ASUClientActivityCard(
+                            activity: activity,
+                            language: settings.language,
+                            highlighted: highlightedActivityCode == activity.code
+                        ) {
+                            if activity.kind == .showroomVisit { ASUVisitReminder.cancel(code: activity.code) }
+                            Persistence.removeActivity(id: activity.id)
+                            reloadLocalState()
+                        }
+                        .id(activity.code)
                     }
                 }
-                .asuCard(radius: 28)
             }
         }
         .padding(.horizontal, ASUDesign.pagePadding)
     }
 
-    private func activityRow(_ activity: ASUClientActivity) -> some View {
-        HStack(spacing: 12) {
-            ASUGlassCircleSurface(size: 42) {
-                Image(systemName: activity.kind == .showroomVisit ? "calendar.badge.checkmark" : "sparkles")
-                    .font(.system(size: 15, weight: .semibold))
+    private var emptyActivities: some View {
+        VStack(spacing: 15) {
+            ZStack {
+                Circle().fill(ASUDesign.orange.opacity(0.09)).frame(width: 72, height: 72)
+                Image(systemName: "point.3.connected.trianglepath.dotted")
+                    .font(.system(size: 25, weight: .semibold))
+                    .foregroundStyle(ASUDesign.orange)
             }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(activity.title)
-                    .font(.system(size: 14.5, weight: .bold, design: .rounded))
-                    .lineLimit(1)
-                Text(activityLine(activity))
-                    .font(.system(size: 11.5, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                Text(activity.createdAt.formatted(date: .abbreviated, time: .shortened))
-                    .font(.system(size: 10.5, design: .rounded))
-                    .foregroundStyle(.tertiary)
-            }
-
-            Spacer(minLength: 6)
-
-            Button {
-                UIPasteboard.general.string = activity.code
-                ASUHaptics.selection()
-            } label: {
-                VStack(alignment: .trailing, spacing: 3) {
-                    Text(activity.code)
-                        .font(.system(size: 11.5, weight: .bold, design: .monospaced))
-                        .lineLimit(1)
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .buttonStyle(.plain)
+            Text(L10n.t("Ваш Client Center готов", "Client Center tayyor", settings.language))
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+            Text(L10n.t(
+                "После подбора автомобиля или бронирования визита здесь появится живой статус из Control System — от первого запроса до результата.",
+                "Avtomobil tanlovi yoki tashrif band qilingach, bu yerda Control System’dan jonli holat — birinchi so‘rovdan natijagacha — ko‘rinadi.",
+                settings.language
+            ))
+            .font(.system(size: 13.5))
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .lineSpacing(3)
         }
-        .padding(.horizontal, 14)
-        .frame(minHeight: 82)
-        .id(activity.code)
-        .overlay {
-            if highlightedActivityCode == activity.code {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(ASUDesign.orange.opacity(0.82), lineWidth: 1.6)
-                    .padding(4)
-            }
-        }
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button(role: .destructive) {
-                if activity.kind == .showroomVisit { ASUVisitReminder.cancel(code: activity.code) }
-                Persistence.removeActivity(id: activity.id)
-                reloadLocalState()
-            } label: {
-                Label(L10n.t("Удалить", "O‘chirish", settings.language), systemImage: "trash")
-            }
-        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 30)
+        .padding(.horizontal, 20)
+        .asuCard(radius: 30)
     }
 
-    private func activityLine(_ activity: ASUClientActivity) -> String {
-        switch activity.kind {
-        case .vehicleRequest:
-            return L10n.t("Запрос отправлен · код сохранён", "So‘rov yuborildi · kod saqlandi", settings.language)
-        case .showroomVisit:
-            let date = activity.scheduledDate ?? ""
-            let time = activity.timeSlot ?? activity.subtitle
-            return L10n.t("Визит · \(date) · \(time)", "Tashrif · \(date) · \(time)", settings.language)
+    private var clientCenterOverview: some View {
+        ZStack(alignment: .bottomLeading) {
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .fill(Color(red: 0.055, green: 0.058, blue: 0.063))
+
+            GeometryReader { proxy in
+                let side = min(proxy.size.width * 0.72, 250)
+                Circle()
+                    .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                    .frame(width: side, height: side)
+                    .offset(x: proxy.size.width - side * 0.64, y: -side * 0.45)
+                Circle()
+                    .stroke(Color.white.opacity(0.045), lineWidth: 1)
+                    .frame(width: side * 0.68, height: side * 0.68)
+                    .offset(x: proxy.size.width - side * 0.34, y: -side * 0.12)
+            }
+            .allowsHitTesting(false)
+
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    HStack(spacing: 7) {
+                        Circle().fill(ASUDesign.success).frame(width: 7, height: 7)
+                        Text("AUTO SALE UMAR · CLIENT CENTER")
+                            .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                            .tracking(0.8)
+                    }
+                    .foregroundStyle(Color.white.opacity(0.66))
+                    Spacer()
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.62))
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(L10n.t("Ваш автомобильный путь\nв одной системе.", "Avtomobil yo‘lingiz\nbitta tizimda.", settings.language))
+                        .font(.system(size: 27, weight: .bold, design: .rounded))
+                        .tracking(-0.75)
+                        .foregroundStyle(Color.white)
+                    Text(L10n.t(
+                        "Статусы подбора и визитов синхронизируются с Control System.",
+                        "Tanlov va tashrif holatlari Control System bilan sinxronlanadi.",
+                        settings.language
+                    ))
+                    .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.58))
+                    .lineSpacing(2)
+                }
+
+                HStack(spacing: 8) {
+                    centerMetric(
+                        value: "\(activeActivityCount)",
+                        label: L10n.t("В работе", "Jarayonda", settings.language)
+                    )
+                    centerMetric(
+                        value: "\(completedActivityCount)",
+                        label: L10n.t("Завершено", "Yakunlangan", settings.language)
+                    )
+                    centerMetric(
+                        value: "\(activities.count)",
+                        label: L10n.t("Всего", "Jami", settings.language)
+                    )
+                }
+            }
+            .padding(18)
+        }
+        .frame(minHeight: 230)
+        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .shadow(color: colorScheme == .light ? .black.opacity(0.09) : .clear, radius: 22, y: 10)
+    }
+
+    private func centerMetric(value: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(value)
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.white)
+            Text(label)
+                .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                .foregroundStyle(Color.white.opacity(0.52))
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+        .padding(.horizontal, 11)
+        .background(Color.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+    }
+
+    private var activeActivityCount: Int {
+        activities.filter {
+            let status = ASUClientStatusPresentation.normalized($0.status, kind: $0.kind)
+            return status != "completed" && status != "cancelled"
+        }.count
+    }
+
+    private var completedActivityCount: Int {
+        activities.filter { ASUClientStatusPresentation.normalized($0.status, kind: $0.kind) == "completed" }.count
+    }
+
+    private func syncActivities(showFeedback: Bool) async {
+        guard !isSyncingActivities else { return }
+        reloadLocalState()
+        guard !activities.isEmpty else { return }
+
+        isSyncingActivities = true
+        syncNotice = nil
+        let result = await ASUClientActivitySync.refresh(
+            activities: activities,
+            phone: profile.phone,
+            language: settings.language,
+            notificationsEnabled: settings.statusNotificationsEnabled
+        )
+        reloadLocalState()
+        isSyncingActivities = false
+
+        if result.failedCount == 0 {
+            if result.changedCount > 0 {
+                syncNotice = L10n.t(
+                    "Обновлено статусов: \(result.changedCount)",
+                    "Yangilangan holatlar: \(result.changedCount)",
+                    settings.language
+                )
+                if showFeedback { ASUHaptics.success() }
+            } else if showFeedback {
+                syncNotice = L10n.t("Все статусы актуальны", "Barcha holatlar yangilangan", settings.language)
+                ASUHaptics.selection()
+            }
+        } else if result.checkedCount > 0 {
+            syncNotice = L10n.t("Часть статусов обновлена. Остальные повторим позже.", "Holatlarning bir qismi yangilandi. Qolganlari keyinroq tekshiriladi.", settings.language)
+        } else {
+            syncNotice = L10n.t("Не удалось связаться с Control System. Сохранённые данные доступны.", "Control System bilan bog‘lanib bo‘lmadi. Saqlangan ma’lumotlar mavjud.", settings.language)
+            if showFeedback { ASUHaptics.error() }
         }
     }
 
@@ -341,6 +453,19 @@ struct ProfileView: View {
                     }
                     .pickerStyle(.segmented)
                 }
+
+                Toggle(isOn: $settings.statusNotificationsEnabled) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(L10n.t("Обновления по обращениям", "Murojaat yangilanishlari", settings.language))
+                            .font(.system(size: 14.5, weight: .semibold, design: .rounded))
+                        Text(L10n.t("Сообщать об изменении статуса подбора и визита", "Tanlov va tashrif holati o‘zgarganda xabar berish", settings.language))
+                            .font(.system(size: 10.5, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .tint(ASUDesign.orange)
+
+                Divider()
 
                 Toggle(isOn: $settings.visitRemindersEnabled) {
                     VStack(alignment: .leading, spacing: 3) {

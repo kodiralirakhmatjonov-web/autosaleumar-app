@@ -61,6 +61,7 @@ struct RootView: View {
         }
         .task {
             await store.loadIfNeeded()
+            await refreshClientActivitiesIfNeeded()
             consumePendingNotificationIfNeeded()
             handleRoute(router.route)
         }
@@ -86,7 +87,10 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active, !showsLaunch else { return }
             consumePendingNotificationIfNeeded()
-            Task { await store.refreshIfStale() }
+            Task {
+                await store.refreshIfStale()
+                await refreshClientActivitiesIfNeeded()
+            }
         }
         .sheet(item: $globalSheet) { destination in
             globalSheetContent(destination)
@@ -126,6 +130,17 @@ struct RootView: View {
                 selection = tab
             }
         }
+    }
+
+    private func refreshClientActivitiesIfNeeded() async {
+        let activities = Persistence.clientActivities()
+        guard !activities.isEmpty else { return }
+        _ = await ASUClientActivitySync.refresh(
+            activities: activities,
+            phone: Persistence.customerProfile().phone,
+            language: settings.language,
+            notificationsEnabled: settings.statusNotificationsEnabled
+        )
     }
 
     private func consumePendingNotificationIfNeeded() {

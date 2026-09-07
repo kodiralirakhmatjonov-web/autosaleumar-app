@@ -68,6 +68,15 @@ struct VehicleRequestReceipt: Decodable, Hashable {
     let brand: String
     let model: String
     let status: String
+    let updatedAt: String?
+
+    init(code: String, brand: String, model: String, status: String, updatedAt: String? = nil) {
+        self.code = code
+        self.brand = brand
+        self.model = model
+        self.status = status
+        self.updatedAt = updatedAt
+    }
 }
 
 struct VisitDraft: Encodable {
@@ -87,6 +96,26 @@ struct VisitReceipt: Decodable, Hashable {
     let timeSlot: String
     let brand: String?
     let carLabel: String?
+    let status: String?
+    let updatedAt: String?
+
+    init(
+        code: String,
+        visitDate: String,
+        timeSlot: String,
+        brand: String?,
+        carLabel: String?,
+        status: String? = nil,
+        updatedAt: String? = nil
+    ) {
+        self.code = code
+        self.visitDate = visitDate
+        self.timeSlot = timeSlot
+        self.brand = brand
+        self.carLabel = carLabel
+        self.status = status
+        self.updatedAt = updatedAt
+    }
 }
 
 struct CompareQuota: Decodable, Hashable {
@@ -211,6 +240,13 @@ enum ASUClientActivityKind: String, Codable, Hashable {
     case showroomVisit
 }
 
+struct ASUClientActivityStatus: Decodable, Hashable {
+    let kind: ASUClientActivityKind
+    let code: String
+    let status: String
+    let updatedAt: String?
+}
+
 struct ASUClientActivity: Identifiable, Codable, Hashable {
     let id: UUID
     let kind: ASUClientActivityKind
@@ -220,6 +256,10 @@ struct ASUClientActivity: Identifiable, Codable, Hashable {
     let createdAt: Date
     let scheduledDate: String?
     let timeSlot: String?
+    let customerPhone: String?
+    var status: String?
+    var serverUpdatedAt: String?
+    var lastSyncedAt: Date?
 
     init(
         id: UUID = UUID(),
@@ -229,7 +269,11 @@ struct ASUClientActivity: Identifiable, Codable, Hashable {
         subtitle: String,
         createdAt: Date = Date(),
         scheduledDate: String? = nil,
-        timeSlot: String? = nil
+        timeSlot: String? = nil,
+        customerPhone: String? = nil,
+        status: String? = nil,
+        serverUpdatedAt: String? = nil,
+        lastSyncedAt: Date? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -239,5 +283,9 @@ struct ASUClientActivity: Identifiable, Codable, Hashable {
         self.createdAt = createdAt
         self.scheduledDate = scheduledDate
         self.timeSlot = timeSlot
+        self.customerPhone = customerPhone
+        self.status = status
+        self.serverUpdatedAt = serverUpdatedAt
+        self.lastSyncedAt = lastSyncedAt
     }
 }

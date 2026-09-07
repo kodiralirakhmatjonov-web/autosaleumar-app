@@ -15,6 +15,7 @@ enum AppConfig {
     static var compareAIURL: URL { website.appending(path: "api/compare-ai") }
     static var vehicleRequestsURL: URL { website.appending(path: "api/vehicle-requests") }
     static var visitsURL: URL { website.appending(path: "api/visits") }
+    static var clientStatusURL: URL { website.appending(path: "api/client-status") }
     static var ramadanGiftURL: URL { website.appending(path: "api/ramadan-gift") }
 
     static func carDetailURL(slug: String) -> URL {

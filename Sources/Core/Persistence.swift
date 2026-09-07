@@ -47,17 +47,21 @@ enum Persistence {
         return items.sorted { $0.createdAt > $1.createdAt }
     }
 
-    static func recordVehicleRequest(_ receipt: VehicleRequestReceipt) {
+    static func recordVehicleRequest(_ receipt: VehicleRequestReceipt, phone: String? = nil) {
         let item = ASUClientActivity(
             kind: .vehicleRequest,
             code: receipt.code,
             title: "\(receipt.brand) \(receipt.model)",
-            subtitle: receipt.status
+            subtitle: receipt.status,
+            customerPhone: phone?.trimmingCharacters(in: .whitespacesAndNewlines),
+            status: receipt.status,
+            serverUpdatedAt: receipt.updatedAt,
+            lastSyncedAt: Date()
         )
         appendActivity(item)
     }
 
-    static func recordVisit(_ receipt: VisitReceipt) {
+    static func recordVisit(_ receipt: VisitReceipt, phone: String? = nil) {
         let label = receipt.carLabel?.trimmingCharacters(in: .whitespacesAndNewlines)
         let brand = receipt.brand?.trimmingCharacters(in: .whitespacesAndNewlines)
         let title = (label?.isEmpty == false ? label : nil)
@@ -70,9 +74,56 @@ enum Persistence {
             title: title,
             subtitle: receipt.timeSlot,
             scheduledDate: receipt.visitDate,
-            timeSlot: receipt.timeSlot
+            timeSlot: receipt.timeSlot,
+            customerPhone: phone?.trimmingCharacters(in: .whitespacesAndNewlines),
+            status: receipt.status ?? "new",
+            serverUpdatedAt: receipt.updatedAt,
+            lastSyncedAt: Date()
         )
         appendActivity(item)
+    }
+
+
+    @discardableResult
+    static func updateActivity(
+        code: String,
+        status: String,
+        serverUpdatedAt: String?,
+        syncedAt: Date = Date()
+    ) -> (activity: ASUClientActivity, changed: Bool)? {
+        var items = clientActivities()
+        guard let index = items.firstIndex(where: { $0.code.caseInsensitiveCompare(code) == .orderedSame }) else { return nil }
+
+        var item = items[index]
+        let previous = normalizedStatus(item.status ?? item.subtitle, kind: item.kind)
+        let next = normalizedStatus(status, kind: item.kind)
+        item.status = next
+        item.serverUpdatedAt = serverUpdatedAt ?? item.serverUpdatedAt
+        item.lastSyncedAt = syncedAt
+        items[index] = item
+        saveActivities(items)
+        return (item, previous != next)
+    }
+
+    static func markActivitiesSynced(codes: Set<String>, at date: Date = Date()) {
+        guard !codes.isEmpty else { return }
+        var items = clientActivities()
+        var changed = false
+        for index in items.indices where codes.contains(items[index].code) {
+            items[index].lastSyncedAt = date
+            changed = true
+        }
+        if changed { saveActivities(items) }
+    }
+
+    private static func normalizedStatus(_ raw: String, kind: ASUClientActivityKind) -> String {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch kind {
+        case .vehicleRequest:
+            return ["new", "contacted", "sourcing", "offered", "completed", "cancelled"].contains(value) ? value : "new"
+        case .showroomVisit:
+            return ["new", "confirmed", "completed", "cancelled"].contains(value) ? value : "new"
+        }
     }
 
     static func removeActivity(id: UUID) {

@@ -66,6 +66,22 @@ struct ClientAPI {
         let gift: RamadanGift?
     }
 
+    private struct ClientStatusRequest: Encodable {
+        struct Item: Encodable {
+            let kind: ASUClientActivityKind
+            let code: String
+        }
+
+        let phone: String
+        let items: [Item]
+    }
+
+    private struct ClientStatusEnvelope: Decodable {
+        let success: Bool?
+        let error: String?
+        let statuses: [ASUClientActivityStatus]?
+    }
+
     func submitVehicleRequest(_ draft: VehicleRequestDraft) async throws -> VehicleRequestReceipt {
         let data = try await postJSON(url: AppConfig.vehicleRequestsURL, payload: draft)
         let envelope = try decode(VehicleRequestEnvelope.self, from: data)
@@ -82,6 +98,19 @@ struct ClientAPI {
             throw APIError.validation(envelope.error ?? "Не удалось забронировать визит.")
         }
         return receipt
+    }
+
+    func fetchClientActivityStatuses(activities: [ASUClientActivity], phone: String) async throws -> [ASUClientActivityStatus] {
+        let payload = ClientStatusRequest(
+            phone: phone,
+            items: activities.prefix(30).map { ClientStatusRequest.Item(kind: $0.kind, code: $0.code) }
+        )
+        let data = try await postJSON(url: AppConfig.clientStatusURL, payload: payload)
+        let envelope = try decode(ClientStatusEnvelope.self, from: data)
+        guard envelope.success == true else {
+            throw APIError.validation(envelope.error ?? "Не удалось синхронизировать статусы.")
+        }
+        return envelope.statuses ?? []
     }
 
     func compareAvailability() async -> CompareAIAvailability {

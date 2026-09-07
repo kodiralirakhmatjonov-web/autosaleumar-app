@@ -229,6 +229,8 @@ struct RequestCarView: View {
                 metric(L10n.t("Автомобиль", "Avtomobil", settings.language), "\(receipt.brand) \(receipt.model)")
             }
 
+            ASUClientCenterHandoff(kind: .vehicleRequest, language: settings.language)
+
             Button(L10n.t("Отправить ещё один запрос", "Yana so‘rov yuborish", settings.language)) {
                 self.receipt = nil
                 errorMessage = nil
@@ -314,8 +316,11 @@ struct RequestCarView: View {
                 note: note.nilIfEmpty
             ))
             receipt = response
-            Persistence.recordVehicleRequest(response)
+            Persistence.recordVehicleRequest(response, phone: phone.trimmed)
             Persistence.saveCustomerProfile(ASUCustomerProfile(name: name.trimmed, phone: phone.trimmed, preferredChannel: contactChannel))
+            if settings.statusNotificationsEnabled {
+                _ = await ASUStatusNotifications.ensureAuthorization()
+            }
             ASUHaptics.success()
         } catch {
             errorMessage = settings.language == .ru ? error.localizedDescription : "Xizmat vaqtincha mavjud emas. Qayta urinib ko‘ring."
@@ -500,6 +505,7 @@ struct BookingView: View {
                 visitMetric(L10n.t("Код визита", "Tashrif kodi", settings.language), receipt.code)
                 visitMetric(L10n.t("Время", "Vaqt", settings.language), "\(receipt.visitDate)\n\(receipt.timeSlot)")
             }
+            ASUClientCenterHandoff(kind: .showroomVisit, language: settings.language)
             Button(L10n.t("Построить маршрут", "Yo‘nalishni ochish", settings.language)) { openURL(AppConfig.yandexMaps) }
                 .buttonStyle(ASUPrimaryButtonStyle())
         }
@@ -591,9 +597,12 @@ struct BookingView: View {
                 note: note.nilIfEmpty
             ))
             receipt = response
-            Persistence.recordVisit(response)
+            Persistence.recordVisit(response, phone: phone.trimmed)
             let existing = Persistence.customerProfile()
             Persistence.saveCustomerProfile(ASUCustomerProfile(name: name.trimmed, phone: phone.trimmed, preferredChannel: existing.preferredChannel))
+            if settings.statusNotificationsEnabled {
+                _ = await ASUStatusNotifications.ensureAuthorization()
+            }
             if settings.visitRemindersEnabled {
                 await ASUVisitReminder.schedule(for: response, language: settings.language)
             }
