@@ -334,7 +334,7 @@ struct RamadanGiftView: View {
     private func giftHero(_ gift: RamadanGift) -> some View {
         VStack(spacing: 0) {
             ZStack(alignment: .bottomLeading) {
-                ASURemoteImage(url: activeGiftURL(gift), contentMode: .fit)
+                ASURemoteImage(url: activeGiftURL(gift), contentMode: .fill)
                     .frame(maxWidth: .infinity)
                     .frame(height: 310)
                     .background(ASUDesign.gallery)
@@ -412,7 +412,7 @@ struct RamadanGiftView: View {
                 HStack(spacing: 10) {
                     ForEach(gift.media) { media in
                         Button { selectedMediaID = media.id } label: {
-                            ASURemoteImage(url: URL(string: media.publicUrl), contentMode: .fit)
+                            ASURemoteImage(url: URL(string: media.publicUrl), contentMode: .fill)
                                 .frame(width: 260, height: 184)
                                 .background(ASUDesign.gallery)
                                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))

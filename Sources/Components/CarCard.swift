@@ -264,13 +264,12 @@ struct CarCard: View {
                     StatusPill(status: car.status, language: settings.language)
                     Spacer()
                     HStack(spacing: 8) {
-                        ShareLink(item: AppConfig.carShareURL(car)) {
+                        ASUCarShareButton(car: car, language: settings.language) {
                             Image(systemName: "square.and.arrow.up")
                                 .font(.system(size: 15, weight: .semibold))
                                 .frame(width: 42, height: 42)
                                 .modifier(ASUCardGlassCircle())
                         }
-                        .buttonStyle(.plain)
                         favoriteButton(size: 42)
                     }
                 }

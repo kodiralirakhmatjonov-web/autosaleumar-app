@@ -22,9 +22,15 @@ struct HomeView: View {
     @State private var showMenu = false
     @State private var heroMuted = true
     @State private var heroReveal = false
+    @State private var heroIndex = 0
+    @State private var remoteHeroMedia: [ASUHomeMediaItem] = []
+    @State private var ramadanGift: RamadanGift?
+    @State private var showRamadanGift = false
     @State private var scrollTarget: HomeAnchor?
     @State private var digitalIndex = 0
     @State private var homeBrand: String? = nil
+
+    private let presentationAPI = ASUPublicPresentationAPI()
 
     private var introURL: URL? {
         Bundle.main.url(forResource: "intro", withExtension: "mp4")
@@ -67,6 +73,10 @@ struct HomeView: View {
                             status: .inStock
                         )
 
+                        if let ramadanGift {
+                            ramadanGiftSection(ramadanGift)
+                        }
+
                         requestSection
 
                         inventorySection(
@@ -106,7 +116,10 @@ struct HomeView: View {
                     .padding(.bottom, 30)
                 }
                 .scrollIndicators(.hidden)
-                .refreshable { await store.loadIfNeeded(force: true) }
+                .refreshable {
+                    await store.loadIfNeeded(force: true)
+                    await loadPresentation(force: true)
+                }
                 .background(ASUDesign.page)
                 .onChange(of: scrollTarget) { _, target in
                     guard let target else { return }
@@ -127,7 +140,11 @@ struct HomeView: View {
                     CarDetailView(car: car)
                 }
             }
+            .navigationDestination(isPresented: $showRamadanGift) {
+                RamadanGiftView()
+            }
         }
+        .task { await loadPresentation() }
         .sheet(isPresented: $showRequest) { NavigationStack { RequestCarView() } }
         .sheet(isPresented: $showBooking) { NavigationStack { BookingView() } }
         .sheet(isPresented: $showCompare) { CompareView() }
@@ -153,62 +170,53 @@ struct HomeView: View {
         .padding(.bottom, 50)
     }
 
+    private var heroSlides: [ASUHomeHeroSlide] {
+        var slides: [ASUHomeHeroSlide] = []
+        if let introURL {
+            slides.append(.builtIn(introURL))
+        }
+        slides.append(contentsOf: remoteHeroMedia.map(ASUHomeHeroSlide.remote))
+        return slides
+    }
+
     private var heroMedia: some View {
-        ZStack(alignment: .bottom) {
-            ZStack {
+        let slides = heroSlides
+        return VStack(spacing: 0) {
+            if slides.isEmpty {
                 Image("IntroPoster")
                     .resizable()
                     .scaledToFill()
-
-                if let introURL {
-                    ASUVideoSurface(
-                        url: introURL,
-                        isMuted: heroMuted,
-                        shouldPlay: true,
-                        loops: true,
-                        gravity: .resizeAspectFill
-                    )
-                }
-
-                LinearGradient(
-                    colors: [.black.opacity(0.42), .clear, .black.opacity(0.58)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            }
-            .frame(height: 350)
-            .clipShape(RoundedRectangle(cornerRadius: 34, style: .continuous))
-
-            HStack(alignment: .bottom, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("AUTO SALE UMAR")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .tracking(1.2)
-                        .foregroundStyle(.white.opacity(0.74))
-                    Text("TASHKENT")
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                }
-
-                Spacer()
-
-                Button {
-                    withAnimation(reduceMotion ? nil : .easeOut(duration: ASUDesign.microDuration)) {
-                        heroMuted.toggle()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 350)
+                    .clipped()
+            } else {
+                TabView(selection: $heroIndex) {
+                    ForEach(Array(slides.enumerated()), id: \.element.id) { index, slide in
+                        ASUHomeHeroCard(
+                            slide: slide,
+                            index: index,
+                            total: slides.count,
+                            selectedIndex: $heroIndex,
+                            isMuted: $heroMuted,
+                            language: settings.language,
+                            reduceMotion: reduceMotion,
+                            advance: { advanceHero(from: index, count: slides.count) }
+                        )
+                        .tag(index)
                     }
-                } label: {
-                    Image(systemName: heroMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 46, height: 46)
-                        .background(.black.opacity(0.28), in: Circle())
-                        .overlay(Circle().stroke(.white.opacity(0.24), lineWidth: 0.7))
                 }
-                .buttonStyle(.plain)
+                .frame(height: 462)
+                .tabViewStyle(.page(indexDisplayMode: .never))
             }
-            .padding(18)
         }
-        .shadow(color: .black.opacity(0.14), radius: 30, y: 16)
+        .background(ASUDesign.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: 34, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 34, style: .continuous).stroke(ASUDesign.line, lineWidth: 0.7))
+        .shadow(color: colorScheme == .light ? .black.opacity(0.12) : .clear, radius: 30, y: 16)
+        .onChange(of: slides.count) { _, count in
+            guard count > 0, heroIndex >= count else { return }
+            heroIndex = 0
+        }
     }
 
     @ViewBuilder
@@ -439,63 +447,18 @@ struct HomeView: View {
         .padding(.bottom, ASUDesign.sectionSpacing)
     }
 
-    private var compareSection: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color.black, Color(red: 0.08, green: 0.08, blue: 0.09)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-
-            Circle()
-                .fill(ASUDesign.orange.opacity(0.18))
-                .frame(width: 190, height: 190)
-                .blur(radius: 38)
-                .offset(x: 115, y: -90)
-
-            VStack(alignment: .leading, spacing: 14) {
-                Label(L10n.t("СРАВНИТЕ ПЕРЕД ВЫБОРОМ", "TANLOVDAN OLDIN SOLISHTIRING", settings.language), systemImage: "arrow.left.arrow.right")
-                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                    .tracking(1.15)
-                    .foregroundStyle(.white.opacity(0.66))
-
-                Text(L10n.t("Два автомобиля.\nОдин понятный выбор.", "Ikki avtomobil.\nBitta tushunarli tanlov.", settings.language))
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                    .tracking(-0.9)
-                    .foregroundStyle(.white)
-
-                Text(L10n.t(
-                    "Сопоставьте цену, характеристики и комплектации реальных автомобилей Auto Sale Umar. Консультант поможет разобраться в деталях только по вашему запросу.",
-                    "Auto Sale Umar’dagi real avtomobillarning narxi, xususiyatlari va komplektatsiyalarini solishtiring. Maslahatchi faqat sizning so‘rovingiz bo‘yicha tafsilotlarni tushuntiradi.",
-                    settings.language
-                ))
-                .font(.system(size: 14.5))
-                .foregroundStyle(.white.opacity(0.68))
-                .lineSpacing(3)
-
-                Button {
-                    showCompare = true
-                } label: {
-                    HStack {
-                        Text(L10n.t("Сравнить автомобили", "Avtomobillarni solishtirish", settings.language))
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                    }
-                    .font(.system(size: 14.5, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.black)
-                    .padding(.horizontal, 18)
-                    .frame(height: 50)
-                    .background(.white, in: Capsule())
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(22)
+    private func ramadanGiftSection(_ gift: RamadanGift) -> some View {
+        ASURamadanHomeFeature(gift: gift, language: settings.language) {
+            showRamadanGift = true
         }
-        .frame(minHeight: 300)
-        .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
+        .padding(.horizontal, ASUDesign.pagePadding)
+        .padding(.bottom, ASUDesign.sectionSpacing)
+    }
+
+    private var compareSection: some View {
+        ASUComparePromoCarousel {
+            showCompare = true
+        }
         .padding(.horizontal, ASUDesign.pagePadding)
         .padding(.bottom, ASUDesign.sectionSpacing)
     }
@@ -880,6 +843,32 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 40)
+    }
+
+    @MainActor
+    private func loadPresentation(force: Bool = false) async {
+        if remoteHeroMedia.isEmpty || force {
+            do {
+                let videos = try await presentationAPI.fetchHomeMedia()
+                remoteHeroMedia = videos
+            } catch {
+                // The built-in hero remains available offline and if Control System media is temporarily unavailable.
+            }
+        }
+
+        do {
+            ramadanGift = try await ClientAPI().fetchRamadanGift()
+        } catch {
+            // Preserve the last visible gift on a transient network error. A successful inactive response removes it.
+        }
+    }
+
+    private func advanceHero(from index: Int, count: Int) {
+        guard count > 1, heroIndex == index else { return }
+        let next = (index + 1) % count
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.55)) {
+            heroIndex = next
+        }
     }
 
     private func homeFiltered(_ cars: [Car]) -> [Car] {

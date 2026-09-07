@@ -16,6 +16,9 @@ struct CarDetailView: View {
     @State private var showContact = false
     @State private var showBooking = false
     @State private var showGallery = false
+    @State private var brandCovers: [ASUBrandCoverItem] = []
+
+    private let presentationAPI = ASUPublicPresentationAPI()
 
     private var activeVariant: CarVariant? {
         guard let detail, !detail.variants.isEmpty else { return nil }
@@ -71,7 +74,9 @@ struct CarDetailView: View {
                     Image(systemName: store.isFavorite(car) ? "heart.fill" : "heart")
                         .foregroundStyle(store.isFavorite(car) ? ASUDesign.orange : Color.primary)
                 }
-                ShareLink(item: AppConfig.carShareURL(car)) { Image(systemName: "square.and.arrow.up") }
+                ASUCarShareButton(car: car, language: settings.language) {
+                    Image(systemName: "square.and.arrow.up")
+                }
             }
         }
         .sheet(isPresented: $showContact) { ContactSheet(car: car) }
@@ -80,42 +85,16 @@ struct CarDetailView: View {
             FullScreenCarGallery(title: car.displayName, photos: galleryPhotos, initialIndex: selectedPhoto)
         }
         .task(id: car.slug) { await loadDetail() }
+        .task(id: car.brand) { await loadBrandCovers() }
     }
 
     private var brandStage: some View {
-        ZStack {
-            LinearGradient(colors: [Color.black, Color(red: 0.06, green: 0.06, blue: 0.065)], startPoint: .top, endPoint: .bottom)
-
-            if let photo = exteriorPhotos.first {
-                ASURemoteImage(url: photo.url, contentMode: .fill, background: .black)
-                    .opacity(0.46)
-                    .overlay(LinearGradient(colors: [.black.opacity(0.18), .black.opacity(0.72)], startPoint: .top, endPoint: .bottom))
-            }
-
-            VStack(spacing: 12) {
-                Spacer()
-                if let asset = brandAsset {
-                    Image(asset)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: 190, maxHeight: 76)
-                        .grayscale(1)
-                        .colorInvert()
-                        .blendMode(.screen)
-                } else {
-                    Text(car.brand.uppercased())
-                        .font(.system(size: 38, weight: .black, design: .rounded))
-                        .foregroundStyle(.white)
-                }
-                Text("AUTO SALE UMAR · \(car.brand.uppercased())")
-                    .font(.system(size: 9.5, weight: .bold, design: .rounded))
-                    .tracking(2.1)
-                    .foregroundStyle(.white.opacity(0.72))
-                Spacer().frame(height: 32)
-            }
-        }
-        .frame(height: 250)
-        .clipped()
+        ASUBrandEditorialStage(
+            brand: car.brand,
+            brandAsset: brandAsset,
+            covers: brandCovers,
+            fallbackPhotoURL: exteriorPhotos.first?.url ?? car.primaryImageURL
+        )
     }
 
     private var brandMedallion: some View {
@@ -604,6 +583,15 @@ struct CarDetailView: View {
         let ru = ["US":"США", "CA":"Канада", "KR":"Корея", "AE":"ОАЭ", "DE":"Германия", "GB":"Великобритания", "AU":"Австралия", "EU":"Европа"]
         let uz = ["US":"AQSH", "CA":"Kanada", "KR":"Koreya", "AE":"BAA", "DE":"Germaniya", "GB":"Buyuk Britaniya", "AU":"Avstraliya", "EU":"Yevropa"]
         return (settings.language == .ru ? ru : uz)[code.uppercased()] ?? code.uppercased()
+    }
+
+    @MainActor
+    private func loadBrandCovers() async {
+        do {
+            brandCovers = try await presentationAPI.fetchBrandCovers(brand: car.brand)
+        } catch {
+            brandCovers = []
+        }
     }
 
     private func loadDetail() async {

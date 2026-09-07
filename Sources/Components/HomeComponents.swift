@@ -85,6 +85,14 @@ struct ASUHomeCarCard: View {
     @Environment(\.colorScheme) private var colorScheme
     let car: Car
 
+    private var descriptor: String? {
+        let candidates = [car.trim, car.engineText, car.fuelType]
+        return candidates.compactMap { value in
+            let clean = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return clean.isEmpty ? nil : clean
+        }.first
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
@@ -106,31 +114,70 @@ struct ASUHomeCarCard: View {
                 .padding(12)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(car.displayName)
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
-                    .tracking(-0.35)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, minHeight: 50, alignment: .topLeading)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 8) {
+                    Text(car.brand.uppercased())
+                        .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                        .tracking(1.15)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
 
-                HStack(spacing: 5) {
-                    if let year = car.year { Text(String(year)) }
-                    if let fuel = car.fuelType, !fuel.isEmpty { Text("·"); Text(fuel) }
-                    if let seats = car.seats { Text("·"); Text("\(seats) \(L10n.t("мест", "o‘rin", settings.language))") }
+                    Spacer(minLength: 6)
+
+                    if let year = car.year {
+                        Text(String(year))
+                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 9)
+                            .frame(height: 26)
+                            .background(Color.primary.opacity(0.045), in: Capsule())
+                            .overlay(Capsule().stroke(ASUDesign.line, lineWidth: 0.6))
+                    }
                 }
-                .font(.system(size: 12.5, weight: .medium, design: .rounded))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
 
-                Text(Format.price(car, language: settings.language))
-                    .font(.system(size: 18.5, weight: .bold, design: .rounded))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
+                Text(car.model)
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .tracking(-0.7)
+                    .lineSpacing(-2)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, minHeight: 54, alignment: .topLeading)
+                    .padding(.top, 9)
+
+                if let descriptor {
+                    Text(descriptor)
+                        .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .padding(.horizontal, 10)
+                        .frame(height: 28)
+                        .background(ASUDesign.gallery, in: Capsule())
+                        .padding(.top, 2)
+                } else {
+                    Color.clear.frame(height: 30)
+                }
+
+                HStack(alignment: .lastTextBaseline, spacing: 10) {
+                    Text(L10n.t("ЦЕНА", "NARX", settings.language))
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .tracking(1.25)
+                        .foregroundStyle(.tertiary)
+                    Spacer(minLength: 6)
+                    Text(Format.price(car, language: settings.language))
+                        .font(.system(size: 19.5, weight: .bold, design: .rounded))
+                        .tracking(-0.35)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                }
+                .padding(.top, 13)
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(ASUDesign.line)
+                        .frame(height: 0.7)
+                }
             }
             .padding(16)
         }
-        .frame(width: 274)
+        .frame(width: 286)
         .background(ASUDesign.elevated)
         .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
         .overlay(
@@ -180,22 +227,39 @@ struct ASUDigitalStoryCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Image(story.assetName)
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity)
-                .frame(height: 260)
-                .clipped()
+            ZStack(alignment: .bottomLeading) {
+                Image(story.assetName)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 268)
+                    .clipped()
 
-            VStack(alignment: .leading, spacing: 7) {
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.34)],
+                    startPoint: .center,
+                    endPoint: .bottom
+                )
+
+                Text("AUTO SALE UMAR · DIGITAL")
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .tracking(1.2)
+                    .foregroundStyle(.white.opacity(0.78))
+                    .padding(15)
+            }
+
+            VStack(alignment: .leading, spacing: 9) {
                 Text(story.title(settings.language))
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .tracking(-0.45)
                 Text(story.text(settings.language))
                     .font(.system(size: 14.5))
                     .foregroundStyle(.secondary)
                     .lineSpacing(3)
             }
-            .padding(16)
+            .padding(.horizontal, 18)
+            .padding(.top, 16)
+            .padding(.bottom, 18)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
