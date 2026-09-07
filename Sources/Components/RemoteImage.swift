@@ -22,14 +22,18 @@ private final class ASURemoteImageLoader: ObservableObject {
     private var loadedURL: URL?
 
     func load(_ url: URL?) {
+        if url == nil {
+            task?.cancel()
+            loadedURL = nil
+            state = .failed
+            return
+        }
+
         guard loadedURL != url else { return }
         task?.cancel()
         loadedURL = url
 
-        guard let url else {
-            state = .failed
-            return
-        }
+        guard let url else { return }
 
         if let image = Self.memoryCache.object(forKey: url as NSURL) {
             state = .success(image)

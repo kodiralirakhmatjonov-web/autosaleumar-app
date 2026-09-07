@@ -23,6 +23,111 @@ struct CarImage: View {
     }
 }
 
+struct ASUCarCardGallery: View {
+    @EnvironmentObject private var store: AppStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let car: Car
+    let height: CGFloat
+    var fill = false
+
+    @State private var selectedIndex = 0
+    @State private var detailImageURLs: [URL] = []
+    @State private var didResolveDetail = false
+
+    private var imageURLs: [URL] {
+        detailImageURLs.isEmpty ? car.galleryImageURLs : detailImageURLs
+    }
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            if imageURLs.isEmpty {
+                if didResolveDetail {
+                    CarImage(url: nil, height: height, fill: fill)
+                } else {
+                    ASUImageSkeleton()
+                        .frame(maxWidth: .infinity)
+                        .frame(height: height)
+                }
+            } else if imageURLs.count == 1 {
+                galleryImage(imageURLs[0])
+            } else {
+                TabView(selection: $selectedIndex) {
+                    ForEach(imageURLs.indices, id: \.self) { index in
+                        galleryImage(imageURLs[index])
+                            .tag(index)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+
+                pageDots
+                    .padding(.bottom, 8)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: height)
+        .clipped()
+        .task(id: "\(car.id)|\(car.updatedAt ?? "")") {
+            await resolveAuthoritativeImages()
+        }
+        .onChange(of: imageURLs.count) { _, count in
+            guard count > 0, selectedIndex >= count else { return }
+            selectedIndex = 0
+        }
+    }
+
+    private func galleryImage(_ url: URL) -> some View {
+        ASURemoteImage(
+            url: url,
+            contentMode: fill ? .fill : .fit,
+            background: ASUDesign.gallery,
+            padding: fill ? 0 : 8
+        )
+        .frame(maxWidth: .infinity)
+        .frame(height: height)
+        .clipped()
+    }
+
+    private var pageDots: some View {
+        HStack(spacing: 4) {
+            ForEach(imageURLs.indices, id: \.self) { index in
+                Circle()
+                    .fill(Color.black.opacity(index == selectedIndex ? 0.82 : 0.22))
+                    .frame(width: index == selectedIndex ? 5.5 : 4.5, height: index == selectedIndex ? 5.5 : 4.5)
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 20)
+        .background(Color.white.opacity(0.88), in: Capsule())
+        .overlay(Capsule().stroke(Color.black.opacity(0.06), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.08), radius: 5, y: 2)
+        .allowsHitTesting(false)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: selectedIndex)
+    }
+
+    @MainActor
+    private func resolveAuthoritativeImages() async {
+        defer { didResolveDetail = true }
+        guard car.slug != nil else { return }
+
+        do {
+            let detail = try await store.detail(for: car)
+            let authoritative = detail.exteriorPhotos.map(\.url)
+            let merged = uniqueURLs(authoritative + car.galleryImageURLs)
+            if !merged.isEmpty {
+                detailImageURLs = merged
+            }
+        } catch {
+            // The catalog payload remains a usable fallback if detail media is temporarily unavailable.
+        }
+    }
+
+    private func uniqueURLs(_ urls: [URL]) -> [URL] {
+        var seen = Set<String>()
+        return urls.filter { seen.insert($0.absoluteString).inserted }
+    }
+}
+
 struct StatusPill: View {
     let status: CarStatus
     let language: AppLanguage
@@ -89,7 +194,7 @@ struct CarCard: View {
     private var gridCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack(alignment: .top) {
-                CarImage(url: car.primaryImageURL, height: 156)
+                ASUCarCardGallery(car: car, height: 156)
 
                 HStack(alignment: .top) {
                     StatusPill(status: car.status, language: settings.language, compact: true)
@@ -154,7 +259,7 @@ struct CarCard: View {
     private var wideCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack(alignment: .top) {
-                CarImage(url: car.primaryImageURL, height: 248)
+                ASUCarCardGallery(car: car, height: 248)
                 HStack {
                     StatusPill(status: car.status, language: settings.language)
                     Spacer()

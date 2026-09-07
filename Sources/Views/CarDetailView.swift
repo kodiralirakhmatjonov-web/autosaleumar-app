@@ -186,44 +186,9 @@ struct CarDetailView: View {
             }
             .padding(.horizontal, ASUDesign.pagePadding)
 
-            heroGallery
             specStrip
         }
         .padding(.top, 10)
-    }
-
-    private var heroGallery: some View {
-        ZStack(alignment: .bottom) {
-            if exteriorPhotos.isEmpty {
-                CarImage(url: car.primaryImageURL, height: 360)
-            } else {
-                TabView(selection: $selectedPhoto) {
-                    ForEach(exteriorPhotos.indices, id: \.self) { index in
-                        let photo = exteriorPhotos[index]
-                        ASURemoteImage(url: photo.url, contentMode: .fit, background: ASUDesign.gallery, padding: 8)
-                            .tag(index)
-                            .onTapGesture { showGallery = true }
-                    }
-                }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-            }
-
-            if exteriorPhotos.count > 1 {
-                ASUGlassSurface(radius: 18) {
-                    Text("\(min(selectedPhoto + 1, exteriorPhotos.count)) / \(exteriorPhotos.count)")
-                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
-                        .padding(.horizontal, 13)
-                        .frame(height: 34)
-                }
-                .padding(.bottom, 14)
-            }
-        }
-        .frame(height: 360)
-        .background(ASUDesign.gallery)
-        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).stroke(ASUDesign.line, lineWidth: 0.7))
-        .padding(.horizontal, ASUDesign.pagePadding)
-        .asuStoryTransition()
     }
 
     private var specStrip: some View {

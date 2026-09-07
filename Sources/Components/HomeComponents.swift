@@ -88,7 +88,7 @@ struct ASUHomeCarCard: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
-                CarImage(url: car.primaryImageURL, height: 188)
+                ASUCarCardGallery(car: car, height: 188)
 
                 HStack(alignment: .top) {
                     StatusPill(status: car.status, language: settings.language, compact: true)
