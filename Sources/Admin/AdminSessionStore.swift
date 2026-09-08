@@ -100,6 +100,14 @@ final class ASUAdminSessionStore: ObservableObject {
         }
     }
 
+    func invalidateSession(notice: String? = nil) {
+        user = nil
+        session = nil
+        loginError = nil
+        sessionNotice = notice ?? "Защищённая сессия завершена. Войдите снова."
+        ASUAdminKeychain.clear()
+    }
+
     func clearLoginError() {
         loginError = nil
     }

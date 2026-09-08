@@ -34,7 +34,12 @@ struct ASUAdminControlSystemView: View {
             }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: ASUAdminSection.self) { section in
-                ASUAdminSectionPlaceholder(section: section)
+                switch section {
+                case .staff:
+                    ASUAdminStaffView(session: session)
+                default:
+                    ASUAdminSectionPlaceholder(section: section)
+                }
             }
         }
     }

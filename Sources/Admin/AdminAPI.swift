@@ -63,6 +63,37 @@ struct ASUAdminAPI {
         let user: ASUAdminUser?
     }
 
+
+    private struct StaffEnvelope: Decodable {
+        let success: Bool?
+        let error: String?
+        let viewer: ASUAdminStaffViewer?
+        let scope: ASUAdminStaffScope?
+        let summary: ASUAdminStaffSummary?
+        let staff: [ASUAdminStaffMember]?
+    }
+
+    private struct StaffMutationEnvelope: Decodable {
+        let success: Bool?
+        let error: String?
+        let staff: ASUAdminStaffMember?
+        let temporaryPassword: String?
+    }
+
+    private struct CreateStaffPayload: Encodable {
+        let fullName: String
+        let email: String
+        let phone: String
+        let role: ASUAdminRole
+    }
+
+    private struct UpdateStaffPayload: Encodable {
+        let action = "update"
+        let id: Int
+        let role: ASUAdminRole?
+        let status: String?
+    }
+
     private var website: URL { AppConfig.website }
     private var loginURL: URL { website.appending(path: "api/login") }
     private var meURL: URL { website.appending(path: "api/me") }
@@ -115,6 +146,101 @@ struct ASUAdminAPI {
 
     func logout(token: String) async {
         _ = try? await request(url: logoutURL, method: "POST", token: token, body: nil)
+    }
+
+    func staff(token: String) async throws -> ASUAdminStaffSnapshot {
+        let data = try await request(
+            url: website.appending(path: "api/staff"),
+            method: "GET",
+            token: token,
+            body: nil
+        )
+
+        let envelope: StaffEnvelope
+        do {
+            envelope = try JSONDecoder().decode(StaffEnvelope.self, from: data)
+        } catch {
+            throw APIError.invalidResponse
+        }
+
+        guard envelope.success == true,
+              let viewer = envelope.viewer,
+              let scope = envelope.scope else {
+            throw APIError.server(200, envelope.error ?? "Не удалось загрузить сотрудников.")
+        }
+
+        return ASUAdminStaffSnapshot(
+            viewer: viewer,
+            scope: scope,
+            summary: envelope.summary ?? .empty,
+            staff: envelope.staff ?? []
+        )
+    }
+
+    func createStaff(
+        fullName: String,
+        email: String,
+        phone: String,
+        role: ASUAdminRole,
+        token: String
+    ) async throws -> ASUAdminCreatedStaff {
+        let payload = CreateStaffPayload(
+            fullName: fullName,
+            email: email,
+            phone: phone,
+            role: role
+        )
+        let body = try JSONEncoder().encode(payload)
+        let data = try await request(
+            url: website.appending(path: "api/staff"),
+            method: "POST",
+            token: token,
+            body: body
+        )
+
+        let envelope: StaffMutationEnvelope
+        do {
+            envelope = try JSONDecoder().decode(StaffMutationEnvelope.self, from: data)
+        } catch {
+            throw APIError.invalidResponse
+        }
+
+        guard envelope.success == true,
+              let member = envelope.staff,
+              let temporaryPassword = envelope.temporaryPassword,
+              !temporaryPassword.isEmpty else {
+            throw APIError.server(200, envelope.error ?? "Не удалось создать сотрудника.")
+        }
+
+        return ASUAdminCreatedStaff(member: member, temporaryPassword: temporaryPassword)
+    }
+
+    func updateStaff(
+        id: Int,
+        role: ASUAdminRole? = nil,
+        status: String? = nil,
+        token: String
+    ) async throws -> ASUAdminStaffMember {
+        let payload = UpdateStaffPayload(id: id, role: role, status: status)
+        let body = try JSONEncoder().encode(payload)
+        let data = try await request(
+            url: website.appending(path: "api/staff"),
+            method: "POST",
+            token: token,
+            body: body
+        )
+
+        let envelope: StaffMutationEnvelope
+        do {
+            envelope = try JSONDecoder().decode(StaffMutationEnvelope.self, from: data)
+        } catch {
+            throw APIError.invalidResponse
+        }
+
+        guard envelope.success == true, let member = envelope.staff else {
+            throw APIError.server(200, envelope.error ?? "Не удалось обновить сотрудника.")
+        }
+        return member
     }
 
     func authorizedData(path: String, method: String = "GET", token: String, body: Data? = nil) async throws -> Data {

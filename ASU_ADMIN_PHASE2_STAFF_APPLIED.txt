@@ -1,0 +1,16 @@
+Auto Sale Umar iOS Control System — Admin Phase 2/7: Staff
+
+Native SwiftUI team management is connected to the existing production /api/staff contract.
+No web/backend files are modified by this mobile patch.
+
+Included:
+- live staff list and D1 summary
+- super_admin/admin scope parity
+- create admin/manager according to server role rules
+- temporary credential handoff + copy
+- protected super-admin profile
+- immediate role changes for super_admin
+- block/restore access, with server session revocation on block
+- last-login, phone, current-user and status presentation
+- 401 session invalidation back to native employee login
+- RU/UZ presentation and native iOS loading/error/refresh states
