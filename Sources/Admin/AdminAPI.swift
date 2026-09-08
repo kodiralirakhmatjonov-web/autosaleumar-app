@@ -94,6 +94,30 @@ struct ASUAdminAPI {
         let status: String?
     }
 
+
+    private struct CarsEnvelope: Decodable {
+        let success: Bool?
+        let error: String?
+        let total: Int?
+        let brands: [String]?
+        let cars: [ASUAdminCarRecord]?
+    }
+
+    private struct CarPatchEnvelope: Decodable {
+        let success: Bool?
+        let error: String?
+        let car: ASUAdminCarPatchResult?
+    }
+
+    private struct CarPatchPayload: Encodable {
+        let id: Int
+        let status: String
+        let price: Int64?
+        let currency: String
+        let priceOnRequest: Bool
+        let isPublic: Bool
+    }
+
     private var website: URL { AppConfig.website }
     private var loginURL: URL { website.appending(path: "api/login") }
     private var meURL: URL { website.appending(path: "api/me") }
@@ -241,6 +265,69 @@ struct ASUAdminAPI {
             throw APIError.server(200, envelope.error ?? "Не удалось обновить сотрудника.")
         }
         return member
+    }
+
+    func cars(
+        query: String,
+        brand: String?,
+        status: ASUAdminCarStatusFilter,
+        country: ASUAdminCarCountryFilter,
+        token: String
+    ) async throws -> ASUAdminCarsSnapshot {
+        var components = URLComponents(url: website.appending(path: "api/cars"), resolvingAgainstBaseURL: false)
+        var queryItems: [URLQueryItem] = []
+        let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanQuery.isEmpty { queryItems.append(URLQueryItem(name: "q", value: cleanQuery)) }
+        if let brand, !brand.isEmpty { queryItems.append(URLQueryItem(name: "brand", value: brand)) }
+        if status != .all { queryItems.append(URLQueryItem(name: "status", value: status.rawValue)) }
+        if let country = country.queryValue { queryItems.append(URLQueryItem(name: "country", value: country)) }
+        if !queryItems.isEmpty { components?.queryItems = queryItems }
+
+        guard let url = components?.url else { throw APIError.invalidResponse }
+        let data = try await request(url: url, method: "GET", token: token, body: nil)
+        let envelope: CarsEnvelope
+        do {
+            envelope = try JSONDecoder().decode(CarsEnvelope.self, from: data)
+        } catch {
+            throw APIError.invalidResponse
+        }
+        guard envelope.success == true, let cars = envelope.cars else {
+            throw APIError.server(200, envelope.error ?? "Не удалось загрузить автомобили.")
+        }
+        return ASUAdminCarsSnapshot(total: envelope.total ?? cars.count, brands: envelope.brands ?? [], cars: cars)
+    }
+
+    func updateCar(
+        id: Int,
+        update: ASUAdminCarQuickUpdate,
+        token: String
+    ) async throws -> ASUAdminCarPatchResult {
+        let payload = CarPatchPayload(
+            id: id,
+            status: update.status.rawValue,
+            price: update.priceOnRequest ? nil : update.price,
+            currency: update.currency,
+            priceOnRequest: update.priceOnRequest,
+            isPublic: update.isPublic
+        )
+        let body = try JSONEncoder().encode(payload)
+        let data = try await request(
+            url: website.appending(path: "api/cars"),
+            method: "PATCH",
+            token: token,
+            body: body
+        )
+
+        let envelope: CarPatchEnvelope
+        do {
+            envelope = try JSONDecoder().decode(CarPatchEnvelope.self, from: data)
+        } catch {
+            throw APIError.invalidResponse
+        }
+        guard envelope.success == true, let car = envelope.car else {
+            throw APIError.server(200, envelope.error ?? "Не удалось изменить автомобиль.")
+        }
+        return car
     }
 
     func authorizedData(path: String, method: String = "GET", token: String, body: Data? = nil) async throws -> Data {

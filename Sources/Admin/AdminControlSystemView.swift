@@ -37,6 +37,8 @@ struct ASUAdminControlSystemView: View {
                 switch section {
                 case .staff:
                     ASUAdminStaffView(session: session)
+                case .cars:
+                    ASUAdminCarsView(session: session)
                 default:
                     ASUAdminSectionPlaceholder(section: section)
                 }

@@ -1,0 +1,7 @@
+AUTO SALE UMAR — NATIVE IOS CONTROL SYSTEM
+ADMIN MIGRATION PHASE 3 / 7 — CARS OPERATIONS
+
+Native SwiftUI module connected to the existing production /api/cars endpoint.
+Includes authenticated D1 catalogue, search, brand/status/country filters,
+photo/variant inspection, publication state, and quick status/price/currency updates.
+No web or Cloudflare source changes are included in this update.
