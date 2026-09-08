@@ -133,30 +133,19 @@ struct CatalogView: View {
 
     private var brandRail: some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 9) {
-                ASUGlassPillButton(isSelected: brand == nil) { brand = nil } label: {
-                    Text(L10n.t("Все марки", "Barcha markalar", settings.language))
+            HStack(spacing: 10) {
+                catalogBrandChip(title: L10n.t("Все марки", "Barcha markalar", settings.language), assetName: nil, isSelected: brand == nil) {
+                    withAnimation(reduceMotion ? nil : ASUDesign.spring) { brand = nil }
                 }
 
                 ForEach(ASUHomeContent.brands) { item in
-                    ASUGlassPillButton(isSelected: brand == item.name) {
+                    catalogBrandChip(title: item.name, assetName: item.assetName, isSelected: brand == item.name) {
                         withAnimation(reduceMotion ? nil : ASUDesign.spring) { brand = brand == item.name ? nil : item.name }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(item.assetName)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 25, height: 18)
-                                .grayscale(1)
-                            Text(item.name)
-                                .font(.system(size: 12.5, weight: .semibold, design: .rounded))
-                                .lineLimit(1)
-                        }
                     }
                 }
             }
             .padding(.horizontal, ASUDesign.pagePadding)
-            .padding(.vertical, 2)
+            .padding(.vertical, 4)
         }
         .scrollIndicators(.hidden)
     }
@@ -165,22 +154,28 @@ struct CatalogView: View {
         ScrollView(.horizontal) {
             HStack(spacing: 8) {
                 ForEach(CatalogFilterStatus.allCases) { item in
-                    ASUGlassPillButton(isSelected: status == item) {
+                    Button {
                         withAnimation(reduceMotion ? nil : ASUDesign.spring) { status = item }
                     } label: {
-                        HStack(spacing: 6) {
+                        HStack(spacing: 7) {
                             if item != .all {
                                 Circle()
-                                    .fill(item == .available || item == .inShowroom || item == .inStock ? ASUDesign.orange : Color.secondary.opacity(0.65))
-                                    .frame(width: 6, height: 6)
+                                    .fill(statusDotColor(item))
+                                    .frame(width: 8, height: 8)
                             }
                             Text(item.title(settings.language))
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
                         }
+                        .foregroundStyle(status == item ? Color(uiColor: .systemBackground) : Color.primary)
+                        .padding(.horizontal, 16)
+                        .frame(height: 46)
+                        .modifier(CatalogStatusCapsule(selected: status == item))
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, ASUDesign.pagePadding)
-            .padding(.vertical, 2)
+            .padding(.vertical, 4)
         }
         .scrollIndicators(.hidden)
     }
@@ -208,6 +203,43 @@ struct CatalogView: View {
             }
         }
         .padding(.horizontal, ASUDesign.pagePadding)
+    }
+
+    private func catalogBrandChip(title: String, assetName: String?, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                if let assetName {
+                    Image(assetName)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 34, height: 24)
+                        .grayscale(1)
+                }
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isSelected ? Color(uiColor: .systemBackground) : Color.primary)
+            .padding(.horizontal, 16)
+            .frame(height: 50)
+            .modifier(CatalogStatusCapsule(selected: isSelected))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func statusDotColor(_ status: CatalogFilterStatus) -> Color {
+        switch status {
+        case .available, .inShowroom, .inStock:
+            return ASUDesign.success
+        case .reserved:
+            return ASUDesign.orange
+        case .sold:
+            return Color.secondary.opacity(0.82)
+        case .inTransit, .madeToOrder:
+            return Color.secondary.opacity(0.68)
+        case .all:
+            return Color.clear
+        }
     }
 
     private func layoutButton(_ value: CatalogCardLayout, symbol: String) -> some View {
@@ -602,5 +634,29 @@ private struct EmptyCatalogView: View {
         }
         .padding(.top, 58)
         .padding(.horizontal, 20)
+    }
+}
+
+
+private struct CatalogStatusCapsule: ViewModifier {
+    let selected: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            if selected {
+                content.glassEffect(.regular.tint(Color.primary).interactive(), in: Capsule())
+            } else {
+                content.glassEffect(.regular.interactive(), in: Capsule())
+            }
+        } else {
+            if selected {
+                content.background(Color.primary, in: Capsule())
+            } else {
+                content
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.20), lineWidth: 0.7))
+            }
+        }
     }
 }

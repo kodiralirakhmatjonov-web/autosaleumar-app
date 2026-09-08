@@ -8,8 +8,7 @@ struct ASURamadanHomeFeature: View {
     let open: () -> Void
 
     private var coverURL: URL? {
-        guard let value = gift.coverMedia?.publicUrl else { return nil }
-        return URL(string: value)
+        normalizedGiftURL(gift.coverMedia?.publicUrl)
     }
 
     var body: some View {
@@ -144,6 +143,13 @@ struct ASURamadanHomeFeature: View {
         }
         .padding(22)
         .background(Color(red: 0.14, green: 0.08, blue: 0.045).opacity(0.94))
+    }
+
+    private func normalizedGiftURL(_ value: String?) -> URL? {
+        guard let rawValue = value?.trimmingCharacters(in: .whitespacesAndNewlines), !rawValue.isEmpty else { return nil }
+        if let absolute = URL(string: rawValue), absolute.scheme != nil { return absolute }
+        if rawValue.hasPrefix("/") { return AppConfig.website.appending(path: String(rawValue.dropFirst())) }
+        return AppConfig.website.appending(path: rawValue)
     }
 
     private var background: some View {

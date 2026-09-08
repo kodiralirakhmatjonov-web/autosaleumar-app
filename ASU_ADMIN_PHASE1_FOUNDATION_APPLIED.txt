@@ -1,0 +1,13 @@
+Auto Sale Umar iOS — Admin Control System Phase 1
+
+Included:
+- Native staff-login entry from the public side menu.
+- Existing web credentials via POST /api/login with client=mobile.
+- Bearer mobile session stored in iOS Keychain (password is never stored).
+- Session restore/verification via /api/me.
+- Server-side session revoke via /api/logout.
+- Role-aware Control System shell for super_admin, admin, sales_manager.
+- Native RU/UZ + appearance controls.
+- No web/backend changes.
+
+Future admin phases plug into Sources/Admin without replacing public app architecture.

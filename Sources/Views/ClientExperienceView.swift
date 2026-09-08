@@ -412,7 +412,7 @@ struct RamadanGiftView: View {
                 HStack(spacing: 10) {
                     ForEach(gift.media) { media in
                         Button { selectedMediaID = media.id } label: {
-                            ASURemoteImage(url: URL(string: media.publicUrl), contentMode: .fill)
+                            ASURemoteImage(url: giftMediaURL(media.publicUrl), contentMode: .fill)
                                 .frame(width: 260, height: 184)
                                 .background(ASUDesign.gallery)
                                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -467,7 +467,14 @@ struct RamadanGiftView: View {
 
     private func activeGiftURL(_ gift: RamadanGift) -> URL? {
         let media = selectedMediaID.flatMap { id in gift.media.first(where: { $0.id == id }) } ?? gift.coverMedia
-        return media.flatMap { URL(string: $0.publicUrl) }
+        return media.flatMap { giftMediaURL($0.publicUrl) }
+    }
+
+    private func giftMediaURL(_ value: String?) -> URL? {
+        guard let rawValue = value?.trimmingCharacters(in: .whitespacesAndNewlines), !rawValue.isEmpty else { return nil }
+        if let absolute = URL(string: rawValue), absolute.scheme != nil { return absolute }
+        if rawValue.hasPrefix("/") { return AppConfig.website.appending(path: String(rawValue.dropFirst())) }
+        return AppConfig.website.appending(path: rawValue)
     }
 
     private func money(_ value: Double?, _ currency: ASUCurrency) -> String {

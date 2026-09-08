@@ -20,6 +20,7 @@ struct HomeView: View {
     @State private var showBooking = false
     @State private var showCompare = false
     @State private var showMenu = false
+    @State private var showAdmin = false
     @State private var heroMuted = true
     @State private var heroReveal = false
     @State private var heroIndex = 0
@@ -37,124 +38,140 @@ struct HomeView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        heroBlock
-                            .id(HomeAnchor.top.rawValue)
+        ZStack(alignment: .topLeading) {
+            NavigationStack {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            heroBlock
+                                .id(HomeAnchor.top.rawValue)
 
-                        catalogStatusBanner
+                            catalogStatusBanner
 
-                        brandSection
-                            .id(HomeAnchor.cars.rawValue)
+                            brandSection
+                                .id(HomeAnchor.cars.rawValue)
 
-                        inventorySection(
-                            kicker: L10n.t("В ШОУРУМЕ", "SHOURUMDA", settings.language),
-                            title: L10n.t("Можно посмотреть сегодня.", "Bugun ko‘rish mumkin.", settings.language),
-                            text: L10n.t(
-                                "Автомобили, которые сейчас находятся в шоуруме и доступны для просмотра.",
-                                "Hozir shourumda turgan va ko‘rish uchun mavjud avtomobillar.",
-                                settings.language
-                            ),
-                            cars: homeFiltered(store.showroomCars),
-                            status: .inShowroom
-                        )
+                            inventorySection(
+                                kicker: L10n.t("В ШОУРУМЕ", "SHOURUMDA", settings.language),
+                                title: L10n.t("Можно посмотреть сегодня.", "Bugun ko‘rish mumkin.", settings.language),
+                                text: L10n.t(
+                                    "Автомобили, которые сейчас находятся в шоуруме и доступны для просмотра.",
+                                    "Hozir shourumda turgan va ko‘rish uchun mavjud avtomobillar.",
+                                    settings.language
+                                ),
+                                cars: homeFiltered(store.showroomCars),
+                                status: .inShowroom
+                            )
 
-                        inventorySection(
-                            kicker: L10n.t("В НАЛИЧИИ", "MAVJUD", settings.language),
-                            title: L10n.t("Без ожидания поставки.", "Yetkazib berishni kutmasdan.", settings.language),
-                            text: L10n.t(
-                                "Автомобили в шоуруме и на складе, которые можно купить без ожидания приезда.",
-                                "Shourum va ombordagi, kelishini kutmasdan xarid qilish mumkin bo‘lgan avtomobillar.",
-                                settings.language
-                            ),
-                            cars: homeFiltered(store.stockCars),
-                            status: .inStock
-                        )
+                            inventorySection(
+                                kicker: L10n.t("В НАЛИЧИИ", "MAVJUD", settings.language),
+                                title: L10n.t("Без ожидания поставки.", "Yetkazib berishni kutmasdan.", settings.language),
+                                text: L10n.t(
+                                    "Автомобили в шоуруме и на складе, которые можно купить без ожидания приезда.",
+                                    "Shourum va ombordagi, kelishini kutmasdan xarid qilish mumkin bo‘lgan avtomobillar.",
+                                    settings.language
+                                ),
+                                cars: homeFiltered(store.stockCars),
+                                status: .inStock
+                            )
 
-                        if let ramadanGift {
-                            ramadanGiftSection(ramadanGift)
+                            if let ramadanGift {
+                                ramadanGiftSection(ramadanGift)
+                            }
+
+                            requestSection
+
+                            inventorySection(
+                                kicker: L10n.t("В ПУТИ", "YO‘LDA", settings.language),
+                                title: L10n.t("Следующее поступление.", "Keyingi kelish.", settings.language),
+                                text: L10n.t(
+                                    "Следите за автомобилями, которые уже направляются в шоурум.",
+                                    "Shourumga yo‘l olgan avtomobillarni kuzating.",
+                                    settings.language
+                                ),
+                                cars: homeFiltered(store.transitCars),
+                                status: .inTransit
+                            )
+
+                            compareSection
+
+                            showroomSection
+                                .id(HomeAnchor.showroom.rawValue)
+
+                            deliverySection
+
+                            soldSection
+
+                            digitalSection
+
+                            contactsSection
+                                .id(HomeAnchor.contacts.rawValue)
+
+                            legacySection
+
+                            closingSection
+
+                            itTeamSection
+
+                            footer
                         }
-
-                        requestSection
-
-                        inventorySection(
-                            kicker: L10n.t("В ПУТИ", "YO‘LDA", settings.language),
-                            title: L10n.t("Следующее поступление.", "Keyingi kelish.", settings.language),
-                            text: L10n.t(
-                                "Следите за автомобилями, которые уже направляются в шоурум.",
-                                "Shourumga yo‘l olgan avtomobillarni kuzating.",
-                                settings.language
-                            ),
-                            cars: homeFiltered(store.transitCars),
-                            status: .inTransit
-                        )
-
-                        compareSection
-
-                        showroomSection
-                            .id(HomeAnchor.showroom.rawValue)
-
-                        deliverySection
-
-                        soldSection
-
-                        digitalSection
-
-                        contactsSection
-                            .id(HomeAnchor.contacts.rawValue)
-
-                        legacySection
-
-                        closingSection
-
-                        itTeamSection
-
-                        footer
+                        .padding(.bottom, 30)
                     }
-                    .padding(.bottom, 30)
-                }
-                .scrollIndicators(.hidden)
-                .refreshable {
-                    await store.loadIfNeeded(force: true)
-                    await loadPresentation(force: true)
-                }
-                .background(ASUDesign.page)
-                .onChange(of: scrollTarget) { _, target in
-                    guard let target else { return }
-                    withAnimation(reduceMotion ? nil : ASUDesign.softSpring) {
-                        proxy.scrollTo(target.rawValue, anchor: .top)
+                    .scrollIndicators(.hidden)
+                    .refreshable {
+                        await store.loadIfNeeded(force: true)
+                        await loadPresentation(force: true)
                     }
-                    scrollTarget = nil
+                    .background(ASUDesign.page)
+                    .onChange(of: scrollTarget) { _, target in
+                        guard let target else { return }
+                        withAnimation(reduceMotion ? nil : ASUDesign.softSpring) {
+                            proxy.scrollTo(target.rawValue, anchor: .top)
+                        }
+                        scrollTarget = nil
+                    }
+                }
+                .toolbar(.hidden, for: .navigationBar)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    ASUFloatingHeader { showMenu = true }
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 8)
+                }
+                .navigationDestination(for: Int.self) { id in
+                    if let car = store.cars.first(where: { $0.id == id }) {
+                        CarDetailView(car: car)
+                    }
+                }
+                .navigationDestination(isPresented: $showRamadanGift) {
+                    RamadanGiftView()
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                ASUFloatingHeader { showMenu = true }
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 8)
-            }
-            .navigationDestination(for: Int.self) { id in
-                if let car = store.cars.first(where: { $0.id == id }) {
-                    CarDetailView(car: car)
-                }
-            }
-            .navigationDestination(isPresented: $showRamadanGift) {
-                RamadanGiftView()
+            .disabled(showMenu)
+            .blur(radius: showMenu ? 1.6 : 0)
+
+            if showMenu {
+                ASUHomeSideMenu(
+                    isPresented: $showMenu,
+                    openCatalog: { openCatalog() },
+                    openShowroom: { scrollTarget = .showroom },
+                    openContacts: { scrollTarget = .contacts },
+                    openBooking: { showBooking = true },
+                    openStaffLogin: { showAdmin = true }
+                )
+                .zIndex(10)
             }
         }
+        .animation(reduceMotion ? nil : ASUDesign.softSpring, value: showMenu)
         .task { await loadPresentation() }
         .sheet(isPresented: $showRequest) { NavigationStack { RequestCarView() } }
         .sheet(isPresented: $showBooking) { NavigationStack { BookingView() } }
         .sheet(isPresented: $showCompare) { CompareView() }
-        .sheet(isPresented: $showMenu) {
-            ASUHomeMenuSheet(
-                openCatalog: { openCatalog() },
-                openShowroom: { scrollTarget = .showroom },
-                openContacts: { scrollTarget = .contacts },
-                openBooking: { showBooking = true }
-            )
+        .sheet(isPresented: $showAdmin) {
+            ASUAdminModal()
+                .environmentObject(settings)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.hidden)
+                .presentationCornerRadius(36)
         }
     }
 
@@ -648,10 +665,12 @@ struct HomeView: View {
                     TabView(selection: $digitalIndex) {
                         ForEach(Array(ASUHomeContent.digitalStories.enumerated()), id: \.offset) { index, story in
                             ASUDigitalStoryCard(story: story)
+                                .padding(.horizontal, 12)
+                                .padding(.top, 12)
                                 .tag(index)
                         }
                     }
-                    .frame(height: 390)
+                    .frame(height: 406)
                     .tabViewStyle(.page(indexDisplayMode: .never))
 
                     HStack(spacing: 7) {
@@ -681,6 +700,8 @@ struct HomeView: View {
                     .padding(.bottom, 16)
                 }
             }
+            .clipShape(RoundedRectangle(cornerRadius: 34, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 34, style: .continuous).stroke(ASUDesign.line, lineWidth: 0.7))
             .padding(.horizontal, ASUDesign.pagePadding)
         }
         .padding(.bottom, ASUDesign.sectionSpacing)

@@ -223,6 +223,7 @@ struct ASUShowroomStoryCard: View {
 
 struct ASUDigitalStoryCard: View {
     @EnvironmentObject private var settings: AppSettings
+    @Environment(\.colorScheme) private var colorScheme
     let story: ASUDigitalStory
 
     var body: some View {
@@ -232,11 +233,11 @@ struct ASUDigitalStoryCard: View {
                     .resizable()
                     .scaledToFill()
                     .frame(maxWidth: .infinity)
-                    .frame(height: 268)
+                    .frame(height: 248)
                     .clipped()
 
                 LinearGradient(
-                    colors: [.clear, .black.opacity(0.34)],
+                    colors: [.clear, .black.opacity(0.36)],
                     startPoint: .center,
                     endPoint: .bottom
                 )
@@ -247,6 +248,7 @@ struct ASUDigitalStoryCard: View {
                     .foregroundStyle(.white.opacity(0.78))
                     .padding(15)
             }
+            .background(ASUDesign.gallery)
 
             VStack(alignment: .leading, spacing: 9) {
                 Text(story.title(settings.language))
@@ -256,12 +258,18 @@ struct ASUDigitalStoryCard: View {
                     .font(.system(size: 14.5))
                     .foregroundStyle(.secondary)
                     .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 18)
             .padding(.top, 16)
             .padding(.bottom, 18)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 354, alignment: .topLeading)
+        .background(ASUDesign.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).stroke(ASUDesign.line, lineWidth: 0.7))
+        .shadow(color: colorScheme == .light ? .black.opacity(0.045) : .clear, radius: 16, y: 8)
+        .padding(.bottom, 1)
     }
 }
 
@@ -292,70 +300,117 @@ struct ASUContactTile: View {
     }
 }
 
-struct ASUHomeMenuSheet: View {
+struct ASUHomeSideMenu: View {
     @EnvironmentObject private var settings: AppSettings
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    @Binding var isPresented: Bool
     let openCatalog: () -> Void
     let openShowroom: () -> Void
     let openContacts: () -> Void
     let openBooking: () -> Void
+    let openStaffLogin: () -> Void
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 18) {
-                    VStack(spacing: 0) {
-                        menuRow("car.side", L10n.t("Автомобили", "Avtomobillar", settings.language), action: openCatalog)
-                        Divider().padding(.leading, 56)
-                        menuRow("building.2", L10n.t("Шоурум", "Shourum", settings.language), action: openShowroom)
-                        Divider().padding(.leading, 56)
-                        menuRow("message", L10n.t("Контакты", "Kontaktlar", settings.language), action: openContacts)
-                        Divider().padding(.leading, 56)
-                        menuRow("calendar", L10n.t("Забронировать визит", "Tashrifni band qilish", settings.language), action: openBooking)
-                    }
-                    .asuCard(radius: 26)
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Color.black.opacity(isPresented ? 0.18 : 0)
+                    .ignoresSafeArea()
+                    .onTapGesture { close() }
 
-                    VStack(alignment: .leading, spacing: 13) {
-                        Text(L10n.t("ЯЗЫК", "TIL", settings.language))
-                            .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                            .tracking(1)
-                            .foregroundStyle(.secondary)
-                        Picker("Language", selection: $settings.language) {
-                            ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
-
-                        Text(L10n.t("ТЕМА", "MAVZU", settings.language))
-                            .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                            .tracking(1)
-                            .foregroundStyle(.secondary)
-                            .padding(.top, 4)
-                        Picker("Theme", selection: $settings.theme) {
-                            ForEach(AppTheme.allCases) { Text($0.title(settings.language)).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                    .padding(16)
-                    .asuCard(radius: 26)
-                }
-                .padding(18)
-            }
-            .navigationTitle("Auto Sale Umar")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { dismiss() } label: { Image(systemName: "xmark") }
+                HStack(spacing: 0) {
+                    sidePanel(width: min(proxy.size.width * 0.90, 420))
+                    Spacer(minLength: 0)
                 }
             }
         }
-        .presentationDetents([.medium, .large])
-        .presentationCornerRadius(34)
     }
 
-    private func menuRow(_ symbol: String, _ title: String, action: @escaping () -> Void) -> some View {
+    private func sidePanel(width: CGFloat) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(L10n.t("Добро пожаловать", "Xush kelibsiz", settings.language))
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .tracking(1.15)
+                            .foregroundStyle(.secondary)
+                        Text(L10n.t("в шоу-рум Auto Sale Umar", "Auto Sale Umar shourumiga", settings.language))
+                            .font(.system(size: 31, weight: .bold, design: .rounded))
+                            .tracking(-1)
+                        Text(L10n.t(
+                            "Все основные разделы, контакты и настройки собраны в одной боковой панели.",
+                            "Asosiy bo‘limlar, kontaktlar va sozlamalar bitta yon panelga jamlandi.",
+                            settings.language
+                        ))
+                        .font(.system(size: 14.5))
+                        .foregroundStyle(.secondary)
+                        .lineSpacing(4)
+                    }
+
+                    Spacer(minLength: 10)
+
+                    ASUGlassIconButton(symbol: "xmark", size: 42, fontSize: 15, accessibilityLabel: L10n.t("Закрыть", "Yopish", settings.language)) {
+                        close()
+                    }
+                }
+
+                VStack(spacing: 0) {
+                    sideMenuRow("car.side", L10n.t("Автомобили", "Avtomobillar", settings.language), action: openCatalog)
+                    Divider().padding(.leading, 56)
+                    sideMenuRow("building.2", L10n.t("Шоурум", "Shourum", settings.language), action: openShowroom)
+                    Divider().padding(.leading, 56)
+                    sideMenuRow("message", L10n.t("Контакты", "Kontaktlar", settings.language), action: openContacts)
+                    Divider().padding(.leading, 56)
+                    sideMenuRow("calendar", L10n.t("Забронировать визит", "Tashrifni band qilish", settings.language), action: openBooking)
+                    Divider().padding(.leading, 56)
+                    sideMenuRow("person.crop.circle.badge.checkmark", L10n.t("Войти как сотрудник", "Xodim sifatida kirish", settings.language), action: openStaffLogin)
+                }
+                .asuCard(radius: 28)
+
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(L10n.t("ЯЗЫК", "TIL", settings.language))
+                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                        .tracking(1)
+                        .foregroundStyle(.secondary)
+                    Picker("Language", selection: $settings.language) {
+                        ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Text(L10n.t("ТЕМА", "MAVZU", settings.language))
+                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                        .tracking(1)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
+                    Picker("Theme", selection: $settings.theme) {
+                        ForEach(AppTheme.allCases) { Text($0.title(settings.language)).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .padding(18)
+                .asuCard(radius: 28)
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 18)
+            .padding(.bottom, 30)
+        }
+        .frame(width: width)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .background(ASUDesign.page)
+        .clipShape(RoundedRectangle(cornerRadius: 34, style: .continuous))
+        .overlay(alignment: .trailing) {
+            RoundedRectangle(cornerRadius: 34, style: .continuous)
+                .stroke(ASUDesign.line, lineWidth: 0.7)
+        }
+        .shadow(color: .black.opacity(0.16), radius: 26, y: 10)
+        .ignoresSafeArea(edges: .vertical)
+        .transition(.move(edge: .leading).combined(with: .opacity))
+    }
+
+    private func sideMenuRow(_ symbol: String, _ title: String, action: @escaping () -> Void) -> some View {
         Button {
-            dismiss()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.16, execute: action)
+            closeThen(action)
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: symbol)
@@ -373,5 +428,17 @@ struct ASUHomeMenuSheet: View {
             .frame(minHeight: 62)
         }
         .buttonStyle(.plain)
+    }
+
+    private func closeThen(_ action: @escaping () -> Void) {
+        close()
+        let delay = reduceMotion ? 0.0 : 0.16
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: action)
+    }
+
+    private func close() {
+        withAnimation(reduceMotion ? nil : ASUDesign.softSpring) {
+            isPresented = false
+        }
     }
 }

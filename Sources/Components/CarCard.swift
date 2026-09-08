@@ -135,9 +135,10 @@ struct StatusPill: View {
 
     private var dot: Color {
         switch status {
-        case .inStock, .inShowroom: ASUDesign.orange
-        case .inTransit: Color.secondary
-        case .sold, .reserved: Color.primary.opacity(0.55)
+        case .inStock, .inShowroom: ASUDesign.success
+        case .reserved: ASUDesign.orange
+        case .sold: Color.secondary.opacity(0.82)
+        case .inTransit, .madeToOrder: Color.secondary.opacity(0.68)
         default: Color.secondary.opacity(0.55)
         }
     }
@@ -238,15 +239,17 @@ struct CarCard: View {
                 }
 
                 colorLine
-
-                Spacer(minLength: 0)
+                    .padding(.top, 1)
 
                 Text(Format.price(car, language: settings.language))
                     .font(.system(size: 16.5, weight: .bold, design: .rounded))
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
+                    .padding(.top, 8)
             }
-            .padding(14)
+            .padding(.horizontal, 14)
+            .padding(.top, 14)
+            .padding(.bottom, 16)
             .frame(maxWidth: .infinity, minHeight: 154, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, minHeight: 310, maxHeight: 310, alignment: .top)

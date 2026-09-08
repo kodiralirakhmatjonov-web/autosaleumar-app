@@ -239,9 +239,9 @@ struct CarDetailView: View {
                     ForEach(photos.indices, id: \.self) { index in
                         let photo = photos[index]
                         ZStack(alignment: .bottomLeading) {
-                            ASURemoteImage(url: photo.url, contentMode: .fill, background: ASUDesign.gallery)
-                                .frame(width: 275, height: 280)
-                            LinearGradient(colors: [.clear, .black.opacity(0.68)], startPoint: .center, endPoint: .bottom)
+                            ASURemoteImage(url: photo.url, contentMode: .fit, background: ASUDesign.gallery, padding: 10)
+                                .frame(width: 300, height: 214)
+                            LinearGradient(colors: [.clear, .black.opacity(0.56)], startPoint: .center, endPoint: .bottom)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(index == 0 && !interiorPhotos.isEmpty ? L10n.t("САЛОН", "SALON", settings.language) : L10n.t("ЭКСТЕРЬЕР", "TASHQI KO‘RINISH", settings.language))
                                     .font(.system(size: 9.5, weight: .bold, design: .rounded)).tracking(1.1)
@@ -398,8 +398,8 @@ struct CarDetailView: View {
                     HStack(spacing: 12) {
                         ForEach(galleryPhotos.indices, id: \.self) { index in
                             let photo = galleryPhotos[index]
-                            ASURemoteImage(url: photo.url, contentMode: .fill, background: ASUDesign.gallery)
-                                .frame(width: 310, height: 260)
+                            ASURemoteImage(url: photo.url, contentMode: .fit, background: ASUDesign.gallery, padding: 10)
+                                .frame(width: 332, height: 216)
                                 .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
                                 .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(ASUDesign.line, lineWidth: 0.7))
                                 .onTapGesture { selectedPhoto = index; showGallery = true }
