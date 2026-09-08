@@ -100,7 +100,26 @@ jobs:
 
           shutil.rmtree(staging)
           archive.unlink()
-          print('Native iOS update applied in workspace.')
+          print('Native iOS update unpacked successfully; consumed ZIP removed from workspace.')
+
+      # IMPORTANT:
+      # Commit the ZIP deletion immediately after a successful unpack.
+      # This happens BEFORE the compile gate, so even if Xcode later fails,
+      # mobile-update.zip does not remain as trash in the repository.
+      - name: Remove consumed update ZIP from repository
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          git add -u -- mobile-update.zip
+
+          if git diff --cached --quiet; then
+            echo 'Consumed ZIP is already absent from the repository.'
+          else
+            git commit -m 'Remove consumed mobile update ZIP'
+            git push origin HEAD:main
+          fi
 
       - name: Install XcodeGen
         run: |
@@ -141,7 +160,7 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           if git diff --cached --quiet; then
-            echo 'No changes to commit.'
+            echo 'No verified source changes to commit.'
             exit 0
           fi
           git commit -m 'Apply verified Auto Sale Umar native iOS update'
