@@ -43,8 +43,12 @@ struct ASUAdminControlSystemView: View {
                     ASUAdminBrandMediaView(session: session)
                 case .home:
                     ASUAdminHomeMediaView(session: session)
-                default:
-                    ASUAdminSectionPlaceholder(section: section)
+                case .visits:
+                    ASUAdminVisitsView(session: session)
+                case .requests:
+                    ASUAdminRequestsView(session: session)
+                case .ramadan:
+                    ASUAdminRamadanGiftView(session: session)
                 }
             }
         }
