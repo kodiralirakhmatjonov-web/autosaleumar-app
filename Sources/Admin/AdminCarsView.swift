@@ -19,6 +19,8 @@ struct ASUAdminCarsView: View {
     @State private var showFilters = false
     @State private var selectedCar: ASUAdminCarRecord?
     @State private var quickEditCar: ASUAdminCarRecord?
+    @State private var showNewCar = false
+    @State private var fullEditCar: ASUAdminCarRecord?
 
     private let api = ASUAdminAPI()
 
@@ -61,6 +63,16 @@ struct ASUAdminCarsView: View {
         .navigationTitle(L10n.t("Автомобили", "Avtomobillar", settings.language))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showNewCar = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel(L10n.t("Новый автомобиль", "Yangi avtomobil", settings.language))
+            }
+        }
         .refreshable { await loadCars(silent: true, debounce: false) }
         .task(id: loadKey) {
             await loadCars(silent: !cars.isEmpty, debounce: !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -80,14 +92,40 @@ struct ASUAdminCarsView: View {
             }
             .environmentObject(settings)
         }
+        .sheet(isPresented: $showNewCar) {
+            NavigationStack {
+                ASUAdminCarEditorView(session: session) { _ in
+                    reloadToken += 1
+                }
+                .environmentObject(settings)
+            }
+        }
+        .sheet(item: $fullEditCar) { car in
+            NavigationStack {
+                ASUAdminCarEditorView(session: session, carID: car.id) { _ in
+                    reloadToken += 1
+                }
+                .environmentObject(settings)
+            }
+        }
         .sheet(item: $selectedCar) { car in
             NavigationStack {
-                ASUAdminCarDetailView(session: session, car: currentCar(for: car.id) ?? car) { carToEdit in
-                    selectedCar = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
-                        quickEditCar = currentCar(for: carToEdit.id) ?? carToEdit
+                ASUAdminCarDetailView(
+                    session: session,
+                    car: currentCar(for: car.id) ?? car,
+                    quickEdit: { carToEdit in
+                        selectedCar = nil
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                            quickEditCar = currentCar(for: carToEdit.id) ?? carToEdit
+                        }
+                    },
+                    fullEdit: { carToEdit in
+                        selectedCar = nil
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                            fullEditCar = currentCar(for: carToEdit.id) ?? carToEdit
+                        }
                     }
-                }
+                )
                 .environmentObject(settings)
             }
         }
@@ -145,6 +183,24 @@ struct ASUAdminCarsView: View {
                     heroMetric(value: cars.count, title: L10n.t("показано", "ko‘rsatildi", settings.language))
                     heroMetric(value: activeFilterCount, title: L10n.t("фильтра", "filtr", settings.language))
                 }
+
+                Button {
+                    showNewCar = true
+                } label: {
+                    HStack(spacing: 9) {
+                        Image(systemName: "plus.circle.fill")
+                        Text(L10n.t("Добавить автомобиль", "Avtomobil qo‘shish", settings.language))
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .font(.system(size: 14.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 16)
+                    .frame(height: 50)
+                    .background(.white, in: Capsule())
+                }
+                .buttonStyle(.plain)
             }
             .padding(21)
         }
@@ -480,8 +536,7 @@ struct ASUAdminCarsView: View {
     private func mediaURL(_ value: String?) -> URL? {
         guard let raw = value?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
         if let absolute = URL(string: raw), absolute.scheme != nil { return absolute }
-        if raw.hasPrefix("/") { return AppConfig.website.appending(path: String(raw.dropFirst())) }
-        return AppConfig.website.appending(path: raw)
+        return URL(string: raw, relativeTo: AppConfig.website)?.absoluteURL
     }
 
     private func brandAsset(_ brand: String) -> String? {
@@ -1011,6 +1066,7 @@ private struct ASUAdminCarDetailView: View {
     @ObservedObject var session: ASUAdminSessionStore
     let car: ASUAdminCarRecord
     let quickEdit: (ASUAdminCarRecord) -> Void
+    let fullEdit: (ASUAdminCarRecord) -> Void
 
     @State private var photoIndex = 0
     @State private var variantIndex = 0
@@ -1042,13 +1098,20 @@ private struct ASUAdminCarDetailView: View {
             ToolbarItem(placement: .topBarLeading) {
                 Button(L10n.t("Закрыть", "Yopish", settings.language)) { dismiss() }
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 Button {
                     quickEdit(car)
                 } label: {
                     Image(systemName: "slider.horizontal.3")
                 }
                 .accessibilityLabel(L10n.t("Статус и цена", "Status va narx", settings.language))
+
+                Button {
+                    fullEdit(car)
+                } label: {
+                    Image(systemName: "pencil")
+                }
+                .accessibilityLabel(L10n.t("Полное редактирование", "To‘liq tahrirlash", settings.language))
             }
         }
     }
@@ -1101,9 +1164,25 @@ private struct ASUAdminCarDetailView: View {
                         .font(.system(size: 23, weight: .bold, design: .rounded))
                         .tracking(-0.55)
                     Spacer()
-                    Button(L10n.t("Изменить", "O‘zgartirish", settings.language)) { quickEdit(car) }
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    Button(L10n.t("Статус и цена", "Status va narx", settings.language)) { quickEdit(car) }
+                        .font(.system(size: 12.5, weight: .semibold, design: .rounded))
                 }
+
+                Button {
+                    fullEdit(car)
+                } label: {
+                    HStack {
+                        Label(L10n.t("Полное редактирование", "To‘liq tahrirlash", settings.language), systemImage: "pencil.and.list.clipboard")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .padding(.horizontal, 14)
+                    .frame(height: 48)
+                    .background(ASUDesign.soft, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+                }
+                .buttonStyle(.plain)
             }
             .padding(17)
         }
@@ -1241,8 +1320,7 @@ private struct ASUAdminCarDetailView: View {
     private func mediaURL(_ value: String?) -> URL? {
         guard let raw = value?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
         if let absolute = URL(string: raw), absolute.scheme != nil { return absolute }
-        if raw.hasPrefix("/") { return AppConfig.website.appending(path: String(raw.dropFirst())) }
-        return AppConfig.website.appending(path: raw)
+        return URL(string: raw, relativeTo: AppConfig.website)?.absoluteURL
     }
 
     private func countryTitle(_ code: String?) -> String {

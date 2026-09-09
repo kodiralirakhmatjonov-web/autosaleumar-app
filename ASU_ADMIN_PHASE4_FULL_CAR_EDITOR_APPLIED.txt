@@ -1,0 +1,14 @@
+AUTO SALE UMAR — ADMIN CONTROL SYSTEM — PHASE 4/7
+Native full vehicle create/edit workflow for iOS.
+
+Included:
+- Complete six-section vehicle editor
+- Create and edit through existing production API contracts
+- Color variants with VIN/stock/quantity
+- Exterior/interior/detail photo import, optimization, upload and deletion
+- D1 + R2 post-save verification
+- Publication sequencing with exterior-photo gate
+- Auto Sale Umar Mini AI autofill with warnings
+- RU/UZ admin UI and validation
+
+No web/backend files are modified by this mobile patch.
