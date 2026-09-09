@@ -69,7 +69,7 @@ struct ASUPublicPresentationAPI {
         guard envelope.success == true else { throw PresentationError.malformed }
 
         return (envelope.videos ?? []).compactMap { item in
-            guard let url = resolveWebsiteURL(item.url), isPlayableHeroURL(url) else { return nil }
+            guard let url = resolveWebsiteURL(item.url), isPlayableHeroItem(key: item.key) else { return nil }
             let currency = ASUCurrency(rawValue: item.currency?.uppercased() ?? "USD") ?? .USD
             let status = CarStatus(rawValue: item.status ?? "") ?? .inShowroom
             return ASUHomeMediaItem(
@@ -137,9 +137,11 @@ struct ASUPublicPresentationAPI {
         return relative.absoluteURL
     }
 
-    private func isPlayableHeroURL(_ url: URL) -> Bool {
-        let ext = url.pathExtension.lowercased()
-        // AVPlayer is reliable with MP4/MOV. Ignore WebM entries rather than showing a broken premium hero.
+    private func isPlayableHeroItem(key: String) -> Bool {
+        let ext = (key as NSString).pathExtension.lowercased()
+        // The public media URL is an API endpoint with the R2 key in its query string, so its path
+        // has no video extension. Check the authoritative R2 key instead. AVPlayer is reliable
+        // with MP4/MOV; WebM stays hidden rather than producing a broken premium hero slide.
         return ext == "mp4" || ext == "mov" || ext == "m4v"
     }
 

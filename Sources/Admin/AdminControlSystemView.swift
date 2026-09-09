@@ -39,6 +39,10 @@ struct ASUAdminControlSystemView: View {
                     ASUAdminStaffView(session: session)
                 case .cars:
                     ASUAdminCarsView(session: session)
+                case .brands:
+                    ASUAdminBrandMediaView(session: session)
+                case .home:
+                    ASUAdminHomeMediaView(session: session)
                 default:
                     ASUAdminSectionPlaceholder(section: section)
                 }

@@ -1,0 +1,15 @@
+AUTO SALE UMAR — NATIVE CONTROL SYSTEM — PHASE 5
+
+Brand Media + Home Media parity with the existing production Control System.
+
+Native iOS now supports:
+- administrator-only brand cover management through existing /api/brand-media
+- up to three R2 covers per brand, upload/delete and dynamic brand discovery
+- administrator-only homepage advertising video management through existing /api/home-media
+- video upload (MP4/MOV/WebM, <=80 MB), metadata editing, save/delete
+- brand/model/price/currency/price-on-request/status metadata
+- protected built-in intro fallback
+- production session invalidation on 401
+- public iOS hero fix: playable format is determined from the authoritative R2 key, not the extensionless API URL
+
+No website, Cloudflare Function, D1 schema, R2 layout or production backend code is changed by this patch.
