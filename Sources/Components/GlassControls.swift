@@ -80,8 +80,10 @@ private struct ASUGlassCircle: ViewModifier {
 }
 
 struct ASUGlassSearchField: View {
+    @EnvironmentObject private var settings: AppSettings
     @Binding var text: String
     let placeholder: String
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         HStack(spacing: 11) {
@@ -92,6 +94,9 @@ struct ASUGlassSearchField: View {
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .focused($isFocused)
+                .submitLabel(.search)
+                .onSubmit { isFocused = false }
             if !text.isEmpty {
                 Button { text = "" } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -103,6 +108,18 @@ struct ASUGlassSearchField: View {
         .padding(.horizontal, 16)
         .frame(height: 52)
         .modifier(ASUGlassRounded(radius: 19, interactive: true))
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button {
+                    isFocused = false
+                } label: {
+                    Image(systemName: "keyboard.chevron.compact.down")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                .accessibilityLabel(L10n.t("Скрыть клавиатуру", "Klaviaturani yashirish", settings.language))
+            }
+        }
     }
 }
 

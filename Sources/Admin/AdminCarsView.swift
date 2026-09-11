@@ -59,6 +59,7 @@ struct ASUAdminCarsView: View {
             .padding(.bottom, 36)
         }
         .scrollIndicators(.hidden)
+        .scrollDismissesKeyboard(.interactively)
         .background(ASUDesign.page)
         .navigationTitle(L10n.t("Автомобили", "Avtomobillar", settings.language))
         .navigationBarTitleDisplayMode(.inline)
@@ -603,13 +604,13 @@ private struct ASUAdminCarCard: View {
             if photos.count > 1 {
                 TabView(selection: $photoIndex) {
                     ForEach(photos.indices, id: \.self) { index in
-                        ASURemoteImage(url: mediaURL(photos[index]), contentMode: .fit, background: ASUDesign.gallery, padding: 10)
+                        ASURemoteImage(url: mediaURL(photos[index]), contentMode: .fill, background: ASUDesign.gallery, padding: 0)
                             .tag(index)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
             } else {
-                ASURemoteImage(url: mediaURL(photos.first ?? car.coverUrl), contentMode: .fit, background: ASUDesign.gallery, padding: 10)
+                ASURemoteImage(url: mediaURL(photos.first ?? car.coverUrl), contentMode: .fill, background: ASUDesign.gallery, padding: 0)
             }
 
             if photos.count > 1 {
@@ -1122,13 +1123,13 @@ private struct ASUAdminCarDetailView: View {
                 if !photos.isEmpty {
                     TabView(selection: $photoIndex) {
                         ForEach(photos.indices, id: \.self) { index in
-                            ASURemoteImage(url: mediaURL(photos[index].url), contentMode: .fit, background: ASUDesign.gallery, padding: 10)
+                            ASURemoteImage(url: mediaURL(photos[index].url), contentMode: .fill, background: ASUDesign.gallery, padding: 0)
                                 .tag(index)
                         }
                     }
                     .tabViewStyle(.page(indexDisplayMode: .never))
                 } else {
-                    ASURemoteImage(url: mediaURL(car.coverUrl), contentMode: .fit, background: ASUDesign.gallery, padding: 10)
+                    ASURemoteImage(url: mediaURL(car.coverUrl), contentMode: .fill, background: ASUDesign.gallery, padding: 0)
                 }
 
                 if photos.count > 1 {
@@ -1141,6 +1142,7 @@ private struct ASUAdminCarDetailView: View {
                 }
             }
             .frame(height: 248)
+            .clipped()
 
             VStack(alignment: .leading, spacing: 13) {
                 Text("ID \(car.id) · \(car.brand.uppercased())")

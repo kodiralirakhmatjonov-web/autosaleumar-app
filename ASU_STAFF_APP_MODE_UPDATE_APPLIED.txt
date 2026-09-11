@@ -1,0 +1,10 @@
+Auto Sale Umar iOS — Employee App Mode Update
+
+- Employee Control System is now a full app experience instead of a modal sheet.
+- Native bottom tab bar: Home, Cars, Team (role-aware), Work, More.
+- Client/Employee experience switcher is available from side navigation and employee settings.
+- Employee login opens full-screen and uses the existing protected mobile session.
+- Admin car media now fills its intended gallery area.
+- Search keyboard gets a native keyboard-dismiss button and interactive dismissal.
+
+No website, Cloudflare backend, D1 schema, or R2 contract changes are included.

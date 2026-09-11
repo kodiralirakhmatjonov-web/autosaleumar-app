@@ -21,7 +21,14 @@ struct ASUAdminLoginView: View {
         ScrollView {
             VStack(spacing: 0) {
                 topBar
-                    .padding(.bottom, 30)
+                    .padding(.bottom, 16)
+
+                ASUExperienceSwitcher(mode: .staff) { mode in
+                    if mode == .client { close() }
+                }
+                .padding(16)
+                .asuCard(radius: 24, shadow: false)
+                .padding(.bottom, 28)
 
                 identity
                     .padding(.bottom, 34)
@@ -55,10 +62,10 @@ struct ASUAdminLoginView: View {
                 .frame(width: 154, alignment: .leading)
             Spacer()
             ASUGlassIconButton(
-                symbol: "xmark",
+                symbol: "chevron.left",
                 size: 44,
-                fontSize: 15,
-                accessibilityLabel: L10n.t("Закрыть", "Yopish", settings.language),
+                fontSize: 16,
+                accessibilityLabel: L10n.t("Клиентский интерфейс", "Mijoz interfeysi", settings.language),
                 action: close
             )
         }

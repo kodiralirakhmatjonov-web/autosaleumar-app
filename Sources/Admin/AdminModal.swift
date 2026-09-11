@@ -1,23 +1,20 @@
 import SwiftUI
 
-struct ASUAdminModal: View {
+/// Full-screen employee experience. Despite the legacy file name, this view is not a sheet.
+struct ASUAdminExperienceView: View {
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.dismiss) private var dismiss
-    @StateObject private var session = ASUAdminSessionStore()
+    @ObservedObject var session: ASUAdminSessionStore
+    let switchToClient: () -> Void
 
     var body: some View {
         Group {
             if session.isRestoring {
                 restoringView
             } else if session.isSignedIn {
-                ASUAdminControlSystemView(session: session) {
-                    dismiss()
-                }
+                ASUAdminControlSystemView(session: session, close: switchToClient)
             } else {
-                ASUAdminLoginView(session: session) {
-                    dismiss()
-                }
+                ASUAdminLoginView(session: session, close: switchToClient)
             }
         }
         .background(ASUDesign.page)
@@ -39,5 +36,17 @@ struct ASUAdminModal: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(ASUDesign.page)
+    }
+}
+
+/// Kept only for source compatibility with older builds. New navigation uses ASUAdminExperienceView full-screen.
+struct ASUAdminModal: View {
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var session = ASUAdminSessionStore()
+
+    var body: some View {
+        ASUAdminExperienceView(session: session) {
+            dismiss()
+        }
     }
 }

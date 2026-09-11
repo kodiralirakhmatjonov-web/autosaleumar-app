@@ -309,7 +309,7 @@ struct ASUHomeSideMenu: View {
     let openShowroom: () -> Void
     let openContacts: () -> Void
     let openBooking: () -> Void
-    let openStaffLogin: () -> Void
+    let switchToStaff: () -> Void
 
     var body: some View {
         GeometryReader { proxy in
@@ -355,6 +355,13 @@ struct ASUHomeSideMenu: View {
                     }
                 }
 
+                ASUExperienceSwitcher(mode: .client) { mode in
+                    guard mode == .staff else { return }
+                    closeThen(switchToStaff)
+                }
+                .padding(18)
+                .asuCard(radius: 28)
+
                 VStack(spacing: 0) {
                     sideMenuRow("car.side", L10n.t("Автомобили", "Avtomobillar", settings.language), action: openCatalog)
                     Divider().padding(.leading, 56)
@@ -363,8 +370,6 @@ struct ASUHomeSideMenu: View {
                     sideMenuRow("message", L10n.t("Контакты", "Kontaktlar", settings.language), action: openContacts)
                     Divider().padding(.leading, 56)
                     sideMenuRow("calendar", L10n.t("Забронировать визит", "Tashrifni band qilish", settings.language), action: openBooking)
-                    Divider().padding(.leading, 56)
-                    sideMenuRow("person.crop.circle.badge.checkmark", L10n.t("Войти как сотрудник", "Xodim sifatida kirish", settings.language), action: openStaffLogin)
                 }
                 .asuCard(radius: 28)
 

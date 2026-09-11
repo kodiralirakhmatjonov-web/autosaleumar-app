@@ -18,6 +18,8 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    @StateObject private var adminSession = ASUAdminSessionStore()
+    @State private var experienceMode = ASUExperienceMode.restored()
     @State private var selection: AppTab = AppTab(
         rawValue: UserDefaults.standard.string(forKey: "ASULastSelectedTabV1") ?? ""
     ) ?? .home
@@ -26,24 +28,17 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
-            TabView(selection: $selection) {
-                HomeView(selectTab: selectTab)
-                    .tag(AppTab.home)
-                    .tabItem { Label(AppTab.home.title(settings.language), systemImage: AppTab.home.symbol) }
-
-                CatalogView()
-                    .tag(AppTab.catalog)
-                    .tabItem { Label(AppTab.catalog.title(settings.language), systemImage: AppTab.catalog.symbol) }
-
-                FavoritesView()
-                    .tag(AppTab.favorites)
-                    .tabItem { Label(AppTab.favorites.title(settings.language), systemImage: AppTab.favorites.symbol) }
-
-                ProfileView(selectTab: selectTab)
-                    .tag(AppTab.profile)
-                    .tabItem { Label(AppTab.profile.title(settings.language), systemImage: AppTab.profile.symbol) }
+            Group {
+                switch experienceMode {
+                case .client:
+                    clientExperience
+                case .staff:
+                    ASUAdminExperienceView(session: adminSession) {
+                        switchExperience(.client)
+                    }
+                }
             }
-            .tint(.primary)
+            .transition(reduceMotion ? .identity : .opacity)
 
             if showsLaunch {
                 LaunchOverlay {
@@ -61,7 +56,7 @@ struct RootView: View {
         }
         .task {
             await store.loadIfNeeded()
-            await refreshClientActivitiesIfNeeded()
+            await adminSession.restoreIfNeeded()
             consumePendingNotificationIfNeeded()
             handleRoute(router.route)
         }
@@ -87,15 +82,36 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active, !showsLaunch else { return }
             consumePendingNotificationIfNeeded()
-            Task {
-                await store.refreshIfStale()
-                await refreshClientActivitiesIfNeeded()
-            }
+            Task { await store.refreshIfStale() }
         }
         .sheet(item: $globalSheet) { destination in
             globalSheetContent(destination)
         }
         .sensoryFeedback(.selection, trigger: selection)
+    }
+
+    private var clientExperience: some View {
+        TabView(selection: $selection) {
+            HomeView(
+                selectTab: selectTab,
+                switchToStaff: { switchExperience(.staff) }
+            )
+            .tag(AppTab.home)
+            .tabItem { Label(AppTab.home.title(settings.language), systemImage: AppTab.home.symbol) }
+
+            CatalogView()
+                .tag(AppTab.catalog)
+                .tabItem { Label(AppTab.catalog.title(settings.language), systemImage: AppTab.catalog.symbol) }
+
+            FavoritesView()
+                .tag(AppTab.favorites)
+                .tabItem { Label(AppTab.favorites.title(settings.language), systemImage: AppTab.favorites.symbol) }
+
+            ProfileView(selectTab: selectTab)
+                .tag(AppTab.profile)
+                .tabItem { Label(AppTab.profile.title(settings.language), systemImage: AppTab.profile.symbol) }
+        }
+        .tint(.primary)
     }
 
     @ViewBuilder
@@ -114,11 +130,25 @@ struct RootView: View {
                 TrustView(openCatalog: {
                     globalSheet = nil
                     store.requestCatalog()
+                    switchExperience(.client)
                     selectTab(.catalog)
                 })
             }
         case .ramadanGift:
             NavigationStack { RamadanGiftView() }
+        }
+    }
+
+    private func switchExperience(_ mode: ASUExperienceMode) {
+        guard mode != experienceMode else { return }
+        globalSheet = nil
+        mode.persist()
+        if reduceMotion {
+            experienceMode = mode
+        } else {
+            withAnimation(.easeInOut(duration: ASUDesign.navigationDuration)) {
+                experienceMode = mode
+            }
         }
     }
 
@@ -130,17 +160,6 @@ struct RootView: View {
                 selection = tab
             }
         }
-    }
-
-    private func refreshClientActivitiesIfNeeded() async {
-        let activities = Persistence.clientActivities()
-        guard !activities.isEmpty else { return }
-        _ = await ASUClientActivitySync.refresh(
-            activities: activities,
-            phone: Persistence.customerProfile().phone,
-            language: settings.language,
-            notificationsEnabled: settings.statusNotificationsEnabled
-        )
     }
 
     private func consumePendingNotificationIfNeeded() {
@@ -155,7 +174,11 @@ struct RootView: View {
     private func handleRoute(_ route: ASURoute?) {
         guard let route else { return }
 
-        // A deliberate deep link or notification should never be hidden behind the launch film.
+        // Public deep links always open the client experience, even if an employee was working in Control System.
+        if experienceMode != .client {
+            switchExperience(.client)
+        }
+
         if showsLaunch { showsLaunch = false }
 
         switch route {

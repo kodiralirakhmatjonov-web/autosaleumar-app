@@ -15,12 +15,12 @@ struct HomeView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     let selectTab: (AppTab) -> Void
+    let switchToStaff: () -> Void
 
     @State private var showRequest = false
     @State private var showBooking = false
     @State private var showCompare = false
     @State private var showMenu = false
-    @State private var showAdmin = false
     @State private var heroMuted = true
     @State private var heroReveal = false
     @State private var heroIndex = 0
@@ -156,7 +156,7 @@ struct HomeView: View {
                     openShowroom: { scrollTarget = .showroom },
                     openContacts: { scrollTarget = .contacts },
                     openBooking: { showBooking = true },
-                    openStaffLogin: { showAdmin = true }
+                    switchToStaff: switchToStaff
                 )
                 .zIndex(10)
             }
@@ -166,13 +166,6 @@ struct HomeView: View {
         .sheet(isPresented: $showRequest) { NavigationStack { RequestCarView() } }
         .sheet(isPresented: $showBooking) { NavigationStack { BookingView() } }
         .sheet(isPresented: $showCompare) { CompareView() }
-        .sheet(isPresented: $showAdmin) {
-            ASUAdminModal()
-                .environmentObject(settings)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.hidden)
-                .presentationCornerRadius(36)
-        }
     }
 
     private var heroBlock: some View {
